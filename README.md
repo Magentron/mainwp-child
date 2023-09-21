@@ -9,6 +9,8 @@
  <a href="https://www.codefactor.io/repository/github/mainwp/mainwp-child"><img src="https://www.codefactor.io/repository/github/mainwp/mainwp-child/badge" alt="CodeFactor" /></a>
 </p>
 
+**NB: This is a fork of https://github.com/mainwp/mainwp-child in order to allow the plugin to work on PHP 7.3.**
+
 Welcome to the [MainWP](https://mainwp.com) Child plugin repository on GitHub. Here you can browse the source, look at open issues and keep track of development.
 
 # Not a Developer

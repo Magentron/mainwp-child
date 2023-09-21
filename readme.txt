@@ -6,14 +6,16 @@ Author URI: https://mainwp.com
 Plugin URI: https://mainwp.com
 Requires at least: 5.4
 Tested up to: 6.3.1
-Requires PHP: 7.4
-Stable tag: 4.5.1
+Requires PHP: 7.3
+Stable tag: 4.5.1a
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
 Securely connects Unlimited WordPress sites to your MainWP Dashboard, allowing you to control them from a single screen
 
 == Description ==
+
+NB: This is a fork of https://github.com/mainwp/mainwp-child in order to allow the plugin to work on PHP 7.3.
 
 This is a Child Plugin for [“MainWP Dashboard”](https://wordpress.org/plugins/mainwp/) that connects your WordPress sites to the MainWP Dashboard.
 
@@ -163,6 +165,10 @@ Yes, we have a quick FAQ with a lot more questions and answers [here](https://ma
 10. Manage Clients Screen
 
 == Changelog ==
+
+= 4.5.1a - 9-5-2023 =
+* Update to support PHP 7.3
+* Add rector to be able to downgrade to PHP 7.3
 
 = 4.5.1 - 9-5-2023 =
 * Fixed: Problem with loading tabs content on the MainWP Child settings page
