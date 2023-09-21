@@ -3,7 +3,7 @@ Contributors: mainwp
 Tags: Manage Multiple Sites, Maintenance, Client, Admin, Update, Monitoring, Dashboard, Backup, Performance, Lighthouse, Analytics, Security
 Author: mainwp
 Author URI: https://mainwp.com
-Plugin URI: https://mainwp.com
+Plugin URI: https://github.com/Magentron/mainwp-child
 Requires at least: 5.4
 Tested up to: 6.3.1
 Requires PHP: 7.3
