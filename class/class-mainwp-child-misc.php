@@ -252,7 +252,7 @@ class MainWP_Child_Misc {
 	 */
 	public function do_security_fix() { // phpcs:ignore -- Current complexity is the only way to achieve desired results, pull request solutions appreciated.
 		$sync = false;
-
+		// phpcs:disable WordPress.Security.NonceVerification
 		$feature = isset( $_POST['feature'] ) ? sanitize_text_field( wp_unslash( $_POST['feature'] ) ) : '';
 
 		if ( 'all' === $feature ) {
@@ -263,7 +263,7 @@ class MainWP_Child_Misc {
 		if ( ! is_array( $skips ) ) {
 			$skips = array();
 		}
-
+		// phpcs:enable WordPress.Security.NonceVerification
 		$information = array();
 		$security    = get_option( 'mainwp_security' );
 		if ( ! is_array( $security ) ) {
@@ -366,7 +366,9 @@ class MainWP_Child_Misc {
 	public function do_security_un_fix() {
 		$information = array();
 
+		// phpcs:disable WordPress.Security.NonceVerification
 		$feature = isset( $_POST['feature'] ) ? sanitize_text_field( wp_unslash( $_POST['feature'] ) ) : '';
+		 // phpcs:enable WordPress.Security.NonceVerification
 
 		$sync = false;
 		if ( 'all' === $feature ) {
@@ -433,8 +435,10 @@ class MainWP_Child_Misc {
 	 * @see https://developer.wordpress.org/reference/functions/wp_get_all_sessions/
 	 */
 	public function settings_tools() {
+		// phpcs:disable WordPress.Security.NonceVerification
 		if ( isset( $_POST['action'] ) ) {
-			$mwp_action = ! empty( $_POST['action'] ) ? sanitize_text_field( wp_unslash( $_POST['action'] ) ) : '';
+			$mwp_action = MainWP_System::instance()->validate_params( 'action' );
+			// phpcs:enable WordPress.Security.NonceVerification
 			switch ( $mwp_action ) {
 				case 'force_destroy_sessions':
 					if ( 0 === get_current_user_id() ) {
@@ -471,11 +475,12 @@ class MainWP_Child_Misc {
 	 * @uses \MainWP\Child\MainWP_Child_Misc::uploader_upload_file() Upload file from the MainWP Dashboard.
 	 */
 	public function uploader_action() {
+		// phpcs:disable WordPress.Security.NonceVerification
 		$file_url    = isset( $_POST['url'] ) ? MainWP_Utility::instance()->maybe_base64_decode( wp_unslash( $_POST['url'] ) ) : '';
 		$path        = isset( $_POST['path'] ) ? wp_unslash( $_POST['path'] ) : '';
 		$filename    = isset( $_POST['filename'] ) ? wp_unslash( $_POST['filename'] ) : '';
 		$information = array();
-
+		// phpcs:enable WordPress.Security.NonceVerification
 		if ( empty( $file_url ) || empty( $path ) ) {
 			MainWP_Helper::write( $information );
 
@@ -491,8 +496,9 @@ class MainWP_Child_Misc {
 		if ( '/' === $path ) {
 			$dir = ABSPATH;
 		} else {
-			$path = str_replace( ' ', '-', $path );
-			$path = str_replace( '.', '-', $path );
+			// fix invalid name.
+			$path = str_replace( '../', '--/', $path );
+			$path = str_replace( './', '-/', $path );
 			$dir  = ABSPATH . $path;
 		}
 
@@ -548,10 +554,8 @@ class MainWP_Child_Misc {
 	 * @return array Full path and file name of uploaded file.
 	 */
 	public function uploader_upload_file( $file_url, $path, $file_name ) {
-		// Fixes: Uploader Extension rename htaccess file issue.
-		if ( '.htaccess' != $file_name && '.htpasswd' != $file_name ) {
-			$file_name = sanitize_file_name( $file_name );
-		}
+
+		$file_name = $this->sanitize_file_name( $file_name );
 
 		$full_file_name = $path . DIRECTORY_SEPARATOR . $file_name;
 
@@ -577,7 +581,7 @@ class MainWP_Child_Misc {
 		if ( '.phpfile.txt' === substr( $file_name, - 12 ) ) {
 			$new_file_name = substr( $file_name, 0, - 12 ) . '.php';
 			$new_file_name = $path . DIRECTORY_SEPARATOR . $new_file_name;
-		} elseif ( 0 === strpos( $file_name, 'fix_underscore' ) ) {
+		} elseif ( 0 === strpos( $file_name, 'fix_underscore' ) ) { // to compatible.
 			$new_file_name = str_replace( 'fix_underscore', '', $file_name );
 			$new_file_name = $path . DIRECTORY_SEPARATOR . $new_file_name;
 		} else {
@@ -597,6 +601,73 @@ class MainWP_Child_Misc {
 		return array( 'path' => $full_file_name );
 	}
 
+
+	/**
+	 *
+	 * Sanitizes a filename, replacing whitespace with dashes.
+	 *
+	 * Removes special characters that are illegal in filenames on certain
+	 * operating systems and special characters requiring special escaping
+	 * to manipulate at the command line. Replaces spaces and consecutive
+	 * dashes with a single dash. Trims period, dash and underscore from beginning
+	 * and end of filename. It is not guaranteed that this function will return a
+	 * filename that is allowed to be uploaded.
+	 *
+	 * @since 2.1.0
+	 * @credit WordPress.
+	 * @param string $filename The filename to be sanitized.
+	 * @return string The sanitized filename.
+	 */
+	private function sanitize_file_name( $filename ) {
+		$filename_raw = $filename;
+		$filename     = remove_accents( $filename );
+
+		$special_chars = array( '?', '[', ']', '/', '\\', '=', '<', '>', ':', ';', ',', "'", '"', '&', '$', '#', '*', '(', ')', '|', '~', '`', '!', '{', '}', '%', '+', '’', '«', '»', '”', '“', chr( 0 ) );
+
+		// Check for support for utf8 in the installed PCRE library once and store the result in a static.
+		static $utf8_pcre = null;
+		if ( ! isset( $utf8_pcre ) ) {
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			$utf8_pcre = @preg_match( '/^./u', 'a' );
+		}
+
+		if ( ! seems_utf8( $filename ) ) {
+			$_ext     = pathinfo( $filename, PATHINFO_EXTENSION );
+			$_name    = pathinfo( $filename, PATHINFO_FILENAME );
+			$filename = sanitize_title_with_dashes( $_name ) . '.' . $_ext;
+		}
+
+		if ( $utf8_pcre ) {
+			$filename = preg_replace( "#\x{00a0}#siu", ' ', $filename );
+		}
+
+		/**
+		 * Filters the list of characters to remove from a filename.
+		 *
+		 * @since 2.8.0
+		 *
+		 * @param string[] $special_chars Array of characters to remove.
+		 * @param string   $filename_raw  The original filename to be sanitized.
+		 */
+		$special_chars = apply_filters( 'sanitize_file_name_chars', $special_chars, $filename_raw );
+
+		$filename = str_replace( $special_chars, '', $filename );
+		$filename = str_replace( array( '%20', '+' ), '-', $filename );
+		$filename = preg_replace( '/\.{2,}/', '.', $filename );
+		$filename = preg_replace( '/[\r\n\t -]+/', '-', $filename );
+
+		/**
+		 * Filters a sanitized filename string.
+		 *
+		 * @since 2.8.0
+		 *
+		 * @param string $filename     Sanitized filename.
+		 * @param string $filename_raw The filename prior to sanitization.
+		 */
+		return apply_filters( 'sanitize_file_name', $filename, $filename_raw );
+	}
+
+
 	/**
 	 * Method code_snippet()
 	 *
@@ -611,8 +682,8 @@ class MainWP_Child_Misc {
 	 * @uses \MainWP\Child\MainWP_Utility::execute_snippet()
 	 */
 	public function code_snippet() {
-
-		$action = ! empty( $_POST['action'] ) ? sanitize_text_field( wp_unslash( $_POST['action'] ) ) : '';
+		// phpcs:disable WordPress.Security.NonceVerification
+		$action = MainWP_System::instance()->validate_params( 'action' );
 		$type   = isset( $_POST['type'] ) ? sanitize_text_field( wp_unslash( $_POST['type'] ) ) : '';
 		$slug   = isset( $_POST['slug'] ) ? wp_unslash( $_POST['slug'] ) : '';
 
@@ -628,8 +699,8 @@ class MainWP_Child_Misc {
 			}
 		}
 
-		$code = isset( $_POST['code'] ) ? stripslashes( wp_unslash( $_POST['code'] ) ) : '';
-
+		$code = isset( $_POST['code'] ) ? wp_unslash( $_POST['code'] ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification
 		$information = array();
 		if ( 'run_snippet' === $action ) {
 			$information = MainWP_Utility::execute_snippet( $code );
@@ -709,7 +780,8 @@ class MainWP_Child_Misc {
 					$return['status'] = 'SUCCESS';
 				}
 			} else {
-				$return['status'] = 'SUCCESS';
+				$return['status']   = 'SUCCESS';
+				$return['notfound'] = 1;
 			}
 		}
 		return $return;

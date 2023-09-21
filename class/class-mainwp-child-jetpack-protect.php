@@ -90,6 +90,7 @@ class MainWP_Child_Jetpack_Protect {
 		if ( 'hide' === get_option( 'mainwp_child_jetpack_protect_hide_plugin' ) ) {
 			add_filter( 'all_plugins', array( $this, 'hook_all_plugins' ) );
 			add_action( 'admin_menu', array( $this, 'hook_remove_menu' ) );
+			add_action( 'admin_head', array( $this, 'admin_head' ) );
 			add_filter( 'site_transient_update_plugins', array( &$this, 'hook_remove_update_nag' ) );
 			add_filter( 'mainwp_child_hide_update_notice', array( &$this, 'hook_hide_update_notice' ) );
 		}
@@ -131,6 +132,12 @@ class MainWP_Child_Jetpack_Protect {
 					'connected' => $this->connection->is_connected(),
 				);
 
+				if ( MainWP_Helper::instance()->check_classes_exists( '\Automattic\Jetpack\My_Jetpack\Products\Scan', true ) ) {
+					$protect_san = new \Automattic\Jetpack\My_Jetpack\Products\Scan();
+					if ( MainWP_Helper::instance()->check_methods( $protect_san, 'is_active', true ) ) {
+						$information['sync_JetpackProtect_Data']['is_active'] = $protect_san::is_active() ? 1 : 0;
+					}
+				}
 			} catch ( \Exception $e ) {
 				// error!
 			}
@@ -159,8 +166,8 @@ class MainWP_Child_Jetpack_Protect {
 
 		$information = array();
 
-		if ( isset( $_POST['mwp_action'] ) ) {
-			$mwp_action = ! empty( $_POST['mwp_action'] ) ? sanitize_text_field( wp_unslash( $_POST['mwp_action'] ) ) : '';
+		$mwp_action = MainWP_System::instance()->validate_params( 'mwp_action' );
+		if ( ! empty( $mwp_action ) ) {
 			try {
 				$this->load_connection_manager();
 				switch ( $mwp_action ) {
@@ -186,7 +193,7 @@ class MainWP_Child_Jetpack_Protect {
 	 * @uses \MainWP\Child\MainWP_Helper::update_option()
 	 */
 	public function set_showhide() {
-		$hide = isset( $_POST['showhide'] ) && ( 'hide' === $_POST['showhide'] ) ? 'hide' : '';
+		$hide = MainWP_System::instance()->validate_params( 'showhide' );
 		MainWP_Helper::update_option( 'mainwp_child_jetpack_protect_hide_plugin', $hide, 'yes' );
 		$information['result'] = 'SUCCESS';
 		return $information;
@@ -198,7 +205,7 @@ class MainWP_Child_Jetpack_Protect {
 	 * @return array $return connect result.
 	 */
 	public function set_connect_disconnect() {
-		$status = isset( $_POST['status'] ) ? $_POST['status'] : '';
+		$status = isset( $_POST['status'] ) ? $_POST['status'] : ''; // phpcs:ignore WordPress.Security.NonceVerification
 		if ( 'connect' === $status ) {
 			MainWP_Helper::instance()->check_methods( $this->connection, array( 'set_plugin_instance', 'try_registration', 'is_connected' ) );
 
@@ -268,7 +275,7 @@ class MainWP_Child_Jetpack_Protect {
 	}
 
 	/**
-	 * Remove WPStaging WordPress Menu.
+	 * Remove the plugin menu.
 	 */
 	public function hook_remove_menu() {
 		remove_menu_page( 'jetpack-protect' );
@@ -278,6 +285,23 @@ class MainWP_Child_Jetpack_Protect {
 			exit();
 		}
 	}
+
+	/**
+	 * Hide plugin menus.
+	 */
+	public function admin_head() {
+		?>
+		<style type="text/css">
+			#wp-admin-bar-jetpack-protect{
+				display: none !important;
+			}
+			#toplevel_page_jetpack{
+				display: none !important;
+			}
+		</style>
+		<?php
+	}
+
 
 	/**
 	 * Hide all admin update notices.
@@ -300,7 +324,7 @@ class MainWP_Child_Jetpack_Protect {
 	 * @uses \MainWP\Child\MainWP_Helper::is_updates_screen()
 	 */
 	public function hook_remove_update_nag( $value ) {
-		if ( isset( $_POST['mainwpsignature'] ) ) {
+		if ( MainWP_Helper::is_dashboard_request() ) {
 			return $value;
 		}
 

@@ -108,7 +108,7 @@ class MainWP_Pages {
 
 			$msg  = '<div style="margin:50px 20px 20px 0;background:#fff;border:1px solid #c3c4c7;border-top-color:#d63638;border-top-width:5px;padding:20px;">';
 			$msg .= '<h3 style="margin-top:0;color:#d63638;font-weight:900;">' . esc_html__( 'Attention! ', 'mainwp-child' ) . $child_name . esc_html__( ' plugin is activated but not connected.', 'mainwp-child' ) . '</h3>';
-			$msg .= '<p style="font-size:15px">' . esc_html__( 'Please add this site to your ', 'mainwp-child' ) . $dashboard_name . ' ' . esc_html__( '<strong>NOW</strong> or deactivate the ', 'mainwp-child' ) . $child_name . esc_html__( ' plugin until you are ready to connect this site to your Dashboard in order to avoid unexpected security issues. ', 'mainwp-child' );
+			$msg .= '<p style="font-size:15px">' . esc_html__( 'Please add this site to your ', 'mainwp-child' ) . $dashboard_name . ' ' . esc_html__( 'NOW or deactivate the ', 'mainwp-child' ) . $child_name . esc_html__( ' plugin until you are ready to connect this site to your Dashboard in order to avoid unexpected security issues. ', 'mainwp-child' );
 			$msg .= sprintf( esc_html__( 'If you are not sure how to do it, please review this %1$shelp document%2$s.', 'mainwp-child' ), '<a href="https://kb.mainwp.com/docs/add-site-to-your-dashboard/" target="_blank">', '</a>' ) . '</p>';
 			if ( ! MainWP_Child_Branding::instance()->is_branding() ) {
 				$msg .= '<p style="font-size:15px">' . esc_html__( 'You can also turn on the unique security ID option in ', 'mainwp-child' ) . $child_name . sprintf( esc_html__( ' %1$ssettings%2$s if you would like extra security and additional time to add this site to your Dashboard. ', 'maiwnip-child' ), '<a href="admin.php?page=mainwp_child_tab">', '</a>' );
@@ -278,15 +278,13 @@ class MainWP_Pages {
 	 * @uses \MainWP\Child\MainWP_Clone_Page::render_restore()
 	 */
 	public function render_pages( $shownPage ) { // phpcs:ignore -- Current complexity is the only way to achieve desired results, pull request solutions appreciated.
-		$shownPage     = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : '';
+		$shownPage     = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
 		$branding_opts = MainWP_Child_Branding::instance()->get_branding_options();
 
 		$hide_settings          = isset( $branding_opts['remove_setting'] ) && $branding_opts['remove_setting'] ? true : false;
 		$hide_restore           = isset( $branding_opts['remove_restore'] ) && $branding_opts['remove_restore'] ? true : false;
 		$hide_server_info       = isset( $branding_opts['remove_server_info'] ) && $branding_opts['remove_server_info'] ? true : false;
 		$hide_connection_detail = isset( $branding_opts['remove_connection_detail'] ) && $branding_opts['remove_connection_detail'] ? true : false;
-
-		$hide_style = 'style="display:none"';
 
 		if ( '' == $shownPage ) {
 			if ( ! $hide_settings ) {
@@ -300,16 +298,25 @@ class MainWP_Pages {
 			}
 		}
 
-		self::render_header( $shownPage, false );
+		self::render_header( $shownPage, false, $show_clones );
+
+		if ( is_null( $show_clones ) ) {
+			$show_clones = true;
+		}
+
 		?>
 		<?php if ( ! $hide_settings ) { ?>
-			<div class="mainwp-child-setting-tab settings" <?php echo ( 'settings' !== $shownPage ) ? $hide_style : ''; ?>>
+			<div class="mainwp-child-setting-tab settings" <?php echo 'settings' !== $shownPage ? 'style="display:none"' : ''; ?>>
 				<?php $this->render_settings(); ?>
 			</div>
 		<?php } ?>
 
-		<?php if ( ! $hide_restore ) { ?>
-			<div class="mainwp-child-setting-tab restore-clone" <?php echo ( 'restore-clone' !== $shownPage ) ? $hide_style : ''; ?>>
+		<?php
+		if ( ! $hide_restore && $show_clones ) {
+			$fsmethod = MainWP_Child_Server_Information_Base::get_file_system_method();
+			if ( 'direct' === $fsmethod ) { // to fix error some case of file system method is not direct.
+				?>
+			<div class="mainwp-child-setting-tab restore-clone" <?php echo 'restore-clone' !== $shownPage ? 'style="display:none"' : ''; ?>>
 				<?php
 				if ( isset( $_SESSION['file'] ) ) {
 					MainWP_Clone_Page::render_restore();
@@ -323,16 +330,17 @@ class MainWP_Pages {
 				}
 				?>
 			</div>
+			<?php } ?>
 		<?php } ?>
 
 		<?php if ( ! $hide_server_info ) { ?>
-			<div class="mainwp-child-setting-tab server-info" <?php echo ( 'server-info' !== $shownPage ) ? $hide_style : ''; ?>>
+			<div class="mainwp-child-setting-tab server-info" <?php echo 'server-info' !== $shownPage ? 'style="display:none"' : ''; ?>>
 				<?php MainWP_Child_Server_Information::render_page(); ?>
 			</div>
 		<?php } ?>
 
 			<?php if ( ! $hide_connection_detail ) { ?>
-			<div class="mainwp-child-setting-tab connection-detail" <?php echo ( 'connection-detail' !== $shownPage ) ? $hide_style : ''; ?>>
+			<div class="mainwp-child-setting-tab connection-detail" <?php echo 'connection-detail' !== $shownPage ? 'style="display:none"' : ''; ?>>
 					<?php MainWP_Child_Server_Information::render_connection_details(); ?>
 			</div>
 		<?php } ?>
@@ -345,11 +353,12 @@ class MainWP_Pages {
 	 *
 	 * @param string $shownPage Page shown.
 	 * @param bool   $subpage Whether or not a subpage. Default: true.
+	 * @param bool   $show_clone_funcs Whether or not to show clone tabs.
 	 *
 	 * @uses \MainWP\Child\MainWP_Child_Branding::get_branding_options()
 	 */
-	public static function render_header( $shownPage, $subpage = true ) { // phpcs:ignore -- Current complexity is the only way to achieve desired results, pull request solutions appreciated.
-		$tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : '';
+	public static function render_header( $shownPage, $subpage = true, &$show_clone_funcs = true ) { // phpcs:ignore -- Current complexity is the only way to achieve desired results, pull request solutions appreciated.
+		$tab = isset( $_GET['tab'] ) ? sanitize_text_field( wp_unslash( $_GET['tab'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
 
 		if ( ! empty( $tab ) ) {
 			$shownPage = $tab;
@@ -367,6 +376,17 @@ class MainWP_Pages {
 		$hide_connection_detail = isset( $branding_opts['remove_connection_detail'] ) && $branding_opts['remove_connection_detail'] ? true : false;
 
 		$sitesToClone = get_option( 'mainwp_child_clone_sites' );
+
+		// put here to support hooks to show header.
+		$is_connected_admin = false;
+		$connected          = '' != get_option( 'mainwp_child_pubkey' ) ? true : false;
+		if ( $connected ) {
+			$current_user = wp_get_current_user();
+			if ( $current_user ) {
+				$is_connected_admin = get_option( 'mainwp_child_connected_admin' ) === $current_user->user_login ? true : false;
+			}
+		}
+		$show_clone_funcs = $connected && $is_connected_admin ? true : false;
 
 		?>
 		<style type="text/css">
@@ -425,7 +445,7 @@ class MainWP_Pages {
 		</style>
 
 		<div class="wrap">
-		<h2><i class="fa fa-file"></i> <?php echo ( null === self::$brandingTitle ? 'MainWP Child' : self::$brandingTitle ); ?></h2>
+		<h2><i class="fa fa-file"></i> <?php echo esc_html( null === self::$brandingTitle ? 'MainWP Child' : self::$brandingTitle ); ?></h2>
 		<div style="clear: both;"></div><br/>
 		<div class="mainwp-tabs" id="mainwp-tabs">
 			<?php if ( ! $hide_settings ) { ?>
@@ -434,15 +454,15 @@ class MainWP_Pages {
 				if ( 'settings' === $shownPage ) {
 					echo 'nav-tab-active'; }
 				?>
-" tab-slug="settings" href="<?php echo $subpage ? 'options-general.php?page=mainwp_child_tab&tab=settings' : '#'; ?>" style="margin-left: 0 !important;"><?php esc_html_e( 'Settings', 'mainwp-child' ); ?></a>
+" tab-slug="settings" href="<?php echo ( $subpage ? 'options-general.php?page=mainwp_child_tab&tab=settings' : '#' ); ?>" style="margin-left: 0 !important;"><?php esc_html_e( 'Settings', 'mainwp-child' ); ?></a>
 			<?php } ?>
-			<?php if ( ! $hide_restore ) { ?>
+			<?php if ( ! $hide_restore && $show_clone_funcs ) { ?>
 				<a class="nav-tab pos-nav-tab
 				<?php
 				if ( 'restore-clone' === $shownPage ) {
 					echo 'nav-tab-active'; }
 				?>
-" tab-slug="restore-clone" href="<?php echo $subpage ? 'options-general.php?page=mainwp_child_tab&tab=restore-clone' : '#'; ?>"><?php echo ( 0 !== (int) $sitesToClone ) ? esc_html__( 'Restore / Clone', 'mainwp-child' ) : esc_html__( 'Restore', 'mainwp-child' ); ?></a>
+" tab-slug="restore-clone" href="<?php echo esc_url( $subpage ? 'options-general.php?page=mainwp_child_tab&tab=restore-clone' : '#' ); ?>"><?php echo esc_html__( 0 !== (int) $sitesToClone ? 'Restore / Clone' : 'Restore', 'mainwp-child' ); ?></a>
 			<?php } ?>
 			<?php if ( ! $hide_server_info ) { ?>
 				<a class="nav-tab pos-nav-tab
@@ -450,7 +470,7 @@ class MainWP_Pages {
 				if ( 'server-info' === $shownPage ) {
 					echo 'nav-tab-active'; }
 				?>
-" tab-slug="server-info" href="<?php echo $subpage ? 'options-general.php?page=mainwp_child_tab&tab=server-info' : '#'; ?>"><?php esc_html_e( 'Server information', 'mainwp-child' ); ?></a>
+" tab-slug="server-info" href="<?php echo ( $subpage ? 'options-general.php?page=mainwp_child_tab&tab=server-info' : '#' ); ?>"><?php esc_html_e( 'Server information', 'mainwp-child' ); ?></a>
 			<?php } ?>
 						<?php if ( ! $hide_connection_detail ) { ?>
 				<a class="nav-tab pos-nav-tab
@@ -458,7 +478,7 @@ class MainWP_Pages {
 							if ( 'connection-detail' === $shownPage ) {
 								echo 'nav-tab-active'; }
 							?>
-" tab-slug="connection-detail" href="<?php echo $subpage ? 'options-general.php?page=mainwp_child_tab&tab=connection-detail' : '#'; ?>"><?php esc_html_e( 'Connection Details', 'mainwp-child' ); ?></a>
+" tab-slug="connection-detail" href="<?php echo ( $subpage ? 'options-general.php?page=mainwp_child_tab&tab=connection-detail' : '#' ); ?>"><?php esc_html_e( 'Connection Details', 'mainwp-child' ); ?></a>
 			<?php } ?>
 			<?php
 			if ( isset( self::$subPages ) && is_array( self::$subPages ) ) {
@@ -469,7 +489,7 @@ class MainWP_Pages {
 					if ( $shownPage == $subPage['slug'] ) {
 						echo 'nav-tab-active'; }
 					?>
-" tab-slug="<?php echo esc_attr( $subPage['slug'] ); ?>" href="options-general.php?page=<?php echo rawurlencode( $subPage['page'] ); ?>"><?php echo esc_html( $subPage['title'] ); ?></a>
+" tab-slug="<?php echo esc_attr( $subPage['slug'] ); ?>" href="options-general.php?page=<?php echo esc_html( rawurlencode( $subPage['page'] ) ); ?>"><?php echo esc_html( $subPage['title'] ); ?></a>
 					<?php
 				}
 			}
@@ -519,7 +539,7 @@ class MainWP_Pages {
 	 * Render admin header.
 	 */
 	public function admin_head() {
-		if ( isset( $_GET['page'] ) && 'mainwp_child_tab' == $_GET['page'] ) {
+		if ( isset( $_GET['page'] ) && 'mainwp_child_tab' == $_GET['page'] ) { // phpcs:ignore WordPress.Security.NonceVerification
 			?>
 			<style type="text/css">
 				.mainwp-postbox-actions-top {
@@ -552,6 +572,7 @@ class MainWP_Pages {
 	 * @uses \MainWP\Child\MainWP_Helper::update_option()
 	 */
 	public function render_settings() {
+		// phpcs:disable WordPress.Security.NonceVerification
 		if ( isset( $_POST['submit'] ) && isset( $_POST['nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'child-settings' ) ) {
 			if ( isset( $_POST['requireUniqueSecurityId'] ) ) {
 				MainWP_Helper::update_option( 'mainwp_child_uniqueId', MainWP_Helper::rand_string( 8 ) );
@@ -559,7 +580,7 @@ class MainWP_Pages {
 				MainWP_Helper::update_option( 'mainwp_child_uniqueId', '' );
 			}
 		}
-
+		// phpcs:enable WordPress.Security.NonceVerification
 		?>
 		<div class="postbox">
 			<h2 class="hndle"><span><?php esc_html_e( 'Connection settings', 'mainwp-child' ); ?></span></h2>
@@ -586,7 +607,7 @@ class MainWP_Pages {
 					<p class="submit" style="margin-top: 4em;">
 						<input type="submit" name="submit" id="submit" class="button button-primary button-hero" value="<?php esc_attr_e( 'Save changes', 'mainwp-child' ); ?>">
 					</p>
-					<input type="hidden" name="nonce" value="<?php echo wp_create_nonce( 'child-settings' ); ?>">
+					<input type="hidden" name="nonce" value="<?php echo esc_attr( wp_create_nonce( 'child-settings' ) ); ?>">
 				</form>
 			</div>
 		</div>

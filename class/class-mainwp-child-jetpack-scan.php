@@ -77,15 +77,20 @@ class MainWP_Child_Jetpack_Scan {
 	 */
 	public function __construct() {
 		require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		if ( is_plugin_active( 'jetpack/jetpack.php' ) && defined( 'JETPACK__PLUGIN_DIR' ) ) {
+
+		if ( is_plugin_active( 'jetpack-protect/jetpack-protect.php' ) && defined( 'JETPACK_PROTECT_DIR' ) ) {
 			$this->is_plugin_installed = true;
+		}
+
+		if ( ! $this->is_plugin_installed ) {
+			if ( is_plugin_active( 'jetpack/jetpack.php' ) && defined( 'JETPACK__PLUGIN_DIR' ) ) {
+				$this->is_plugin_installed = true;
+			}
 		}
 
 		if ( ! $this->is_plugin_installed ) {
 			return;
 		}
-
-		add_filter( 'mainwp_site_sync_others_data', array( $this, 'sync_others_data' ), 10, 2 );
 
 		if ( 'hide' === get_option( 'mainwp_child_jetpack_scan_hide_plugin' ) ) {
 			add_action( 'admin_head', array( &$this, 'admin_head' ) );
@@ -97,57 +102,18 @@ class MainWP_Child_Jetpack_Scan {
 	}
 
 	/**
-	 * Load connection manager object.
-	 *
-	 * @return object An array of available clones.
-	 */
-	public function load_connection_manager() {
-		if ( null === $this->connection ) {
-			MainWP_Helper::instance()->check_classes_exists( '\Automattic\Jetpack\Connection\Manager' );
-			$this->connection = new \Automattic\Jetpack\Connection\Manager();
-		}
-		return $this->connection;
-	}
-
-	/**
-	 * Sync others data.
-	 *
-	 * Get an array of available clones of this Child Sites.
-	 *
-	 * @param array $information Holder for available clones.
-	 * @param array $data Array of existing clones.
-	 * @return array $information An array of available clones.
-	 */
-	public function sync_others_data( $information, $data = array() ) {
-		if ( isset( $data['sync_JetpackScan'] ) && $data['sync_JetpackScan'] ) {
-			try {
-				$information['sync_JetpackScan_Data'] = array(
-					'jetpack_scan_activated' => $this->get_scan_active_status() ? 1 : 0,
-				);
-
-			} catch ( \Exception $e ) {
-				// error!
-				$information['sync_JetpackScan_Data']['error'] = $e->getMessage();
-			}
-		}
-		return $information;
-	}
-
-
-	/**
 	 * Fires of certain Jetpack Scan plugin actions.
 	 */
     public function action() { // phpcs:ignore -- ignore complex method notice.
 		if ( ! $this->is_plugin_installed ) {
-			MainWP_Helper::write( array( 'error' => __( 'Please install Jetpack Scan plugin on child website', 'mainwp-child' ) ) );
+			MainWP_Helper::write( array( 'error' => __( 'Please install Jetpack Protect or Jetpact Scan plugin on child website', 'mainwp-child' ) ) );
 		}
 
 		$information = array();
 
-		if ( isset( $_POST['mwp_action'] ) ) {
-			$mwp_action = ! empty( $_POST['mwp_action'] ) ? sanitize_text_field( wp_unslash( $_POST['mwp_action'] ) ) : '';
+		$mwp_action = MainWP_System::instance()->validate_params( 'mwp_action' );
+		if ( ! empty( $mwp_action ) ) {
 			try {
-				$this->load_connection_manager();
 				switch ( $mwp_action ) {
 					case 'set_showhide':
 						$information = $this->set_showhide();
@@ -168,21 +134,11 @@ class MainWP_Child_Jetpack_Scan {
 	 * @uses \MainWP\Child\MainWP_Helper::update_option()
 	 */
 	public function set_showhide() {
-		$hide = isset( $_POST['showhide'] ) && ( 'hide' === $_POST['showhide'] ) ? 'hide' : '';
+		$hide = MainWP_System::instance()->validate_params( 'showhide' );
 		MainWP_Helper::update_option( 'mainwp_child_jetpack_scan_hide_plugin', $hide, 'yes' );
+		MainWP_Helper::update_option( 'mainwp_child_jetpack_protect_hide_plugin', $hide, 'yes' );
 		$information['result'] = 'SUCCESS';
 		return $information;
-	}
-
-	/**
-	 * Get scan status.
-	 *
-	 * @return array $return scan result.
-	 */
-	public function get_scan_active_status() {
-		MainWP_Helper::instance()->check_classes_exists( '\Automattic\Jetpack\My_Jetpack\Products\Scan' );
-		MainWP_Helper::instance()->check_methods( '\Automattic\Jetpack\My_Jetpack\Products\Scan', 'is_active' );
-		return \Automattic\Jetpack\My_Jetpack\Products\Scan::is_active();
 	}
 
 	/**
@@ -214,6 +170,7 @@ class MainWP_Child_Jetpack_Scan {
 		}
 	}
 
+
 	/**
 	 * Render admin header.
 	 */
@@ -222,6 +179,12 @@ class MainWP_Child_Jetpack_Scan {
 		<style type="text/css">
 			div.jitm-card,
 			div.jitm-banner {
+				display: none !important;
+			}
+			#wp-admin-bar-jetpack-protect{
+				display: none !important;
+			}
+			#toplevel_page_jetpack{
 				display: none !important;
 			}
 		</style>
@@ -249,7 +212,7 @@ class MainWP_Child_Jetpack_Scan {
 	 * @uses \MainWP\Child\MainWP_Helper::is_updates_screen()
 	 */
 	public function hook_remove_update_nag( $value ) {
-		if ( isset( $_POST['mainwpsignature'] ) ) {
+		if ( MainWP_Helper::is_dashboard_request() ) {
 			return $value;
 		}
 

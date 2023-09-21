@@ -390,8 +390,6 @@ class MainWP_Client_Report_Base {
 								$token_values[ $token ] = $this->wfc_getblockedcount();
 							} elseif ( 'issue' === $action ) {
 								$token_values[ $token ] = $this->wfc_getissuecount();
-							} else {
-								$token_values[ $token ] = 0;
 							}
 						} elseif ( 'ithemes_scan' === $context ) {
 							if ( 'ithemes_scan' === $context ) {
@@ -407,8 +405,6 @@ class MainWP_Client_Report_Base {
 										)
 									);
 									$token_values[ $token ] = $count;
-								} else {
-									$token_values[ $token ] = 0;
 								}
 							}
 						}
@@ -586,13 +582,13 @@ class MainWP_Client_Report_Base {
 	 * @return array Loops.
 	 */
 	public function get_section_loop_records( $records, $tokens, $connector, $context, $action, $skip_records ) {  // phpcs:ignore -- Current complexity is the only way to achieve desired results, pull request solutions appreciated.
-
+		// phpcs:disable WordPress.Security.NonceVerification
 		$loops      = array();
 		$loop_count = 0;
 
 		$max_items_get    = ( isset( $_POST['max_items_get'] ) && ! empty( $_POST['max_items_get'] ) ) ? intval( $_POST['max_items_get'] ) : 0;
 		$limit_connectors = ( isset( $_POST['limit_reports'] ) && ! empty( $_POST['limit_reports'] ) ) ? intval( $_POST['limit_reports'] ) : array();
-
+		// phpcs:enable WordPress.Security.NonceVerification
 		if ( ! is_array( $limit_connectors ) || empty( $limit_connectors ) ) {
 			$limit_connectors = array( 'mainwp_sucuri', 'mainwp_maintenance', 'mainwp_backups' );
 		}
@@ -766,6 +762,12 @@ class MainWP_Client_Report_Base {
 			case 'time':
 				$tok_value = MainWP_Helper::format_time( MainWP_Helper::get_timestamp( strtotime( $record->created ) ) );
 				break;
+			case 'utime':
+				$tok_value = $record->created;
+				break;
+			case 'slug':
+				$tok_value = $this->get_stream_meta_data( $record, $data );
+				break;
 			case 'area':
 				$data      = 'sidebar_name';
 				$tok_value = $this->get_stream_meta_data( $record, $data );
@@ -925,7 +927,7 @@ class MainWP_Client_Report_Base {
 
 					// SUM_FINAL:Scan complete. You have xxx new issues to fix. See below.
 					// SUM_FINAL:Scan complete. Congratulations, no new problems found.
-					if ( stripos( $meta_value, 'Congratulations' ) || stripos( $meta_value, $congra_str_loc ) ) {
+					if ( stripos( $meta_value, 'Congratulations' ) || stripos( $meta_value, $congra_str_loc ) || $meta_value == $completed_log ) {
 						$meta_value = 'No issues detected';
 					} elseif ( stripos( $meta_value, 'You have' ) ) {
 						$meta_value = 'Issues Detected';

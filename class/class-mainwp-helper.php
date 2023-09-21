@@ -57,7 +57,27 @@ class MainWP_Helper {
 	 */
 	public static function write( $value ) {
 		$output = wp_json_encode( $value );
-		die( '<mainwp>' . base64_encode( $output ) . '</mainwp>' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- base64_encode function is used for backwards compatibility.
+		die( '<mainwp>' . base64_encode( $output ) . '</mainwp>' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions,WordPress.Security.EscapeOutput -- base64_encode function is used for backwards compatibility.
+	}
+
+
+	/**
+	 * Method send()
+	 *
+	 * Send response data to be sent to the MainWP Dashboard.
+	 *
+	 * @param mixed $value Contains information to be send.
+	 * @param mixed $action action send message.
+	 */
+	public static function send( $value, $action = '' ) {
+		/**
+		 * Action: process before send close message.
+		 *
+		 * @since 4.4.0.3
+		 */
+		do_action( 'mainwp_child_before_send_close_message', $value, $action );
+
+		MainWP_Utility::close_connection( $value );
 	}
 
 	/**
@@ -85,8 +105,13 @@ class MainWP_Helper {
 	 * @param bool   $die_on_error If true, process will die on error, if false, process will continue.
 	 *
 	 * @return array Return directory and directory URL.
+	 * @throws \Exception Error Message.
 	 */
 	public static function get_mainwp_dir( $what = null, $die_on_error = true ) {
+
+		if ( ! self::fs_is_connected() ) {
+			throw new \Exception( esc_html__( 'Unable to connect to the filesystem.', 'mainwp-child' ) );
+		}
 
 		/**
 		 * Global variable containing the instance of the (auto-)configured filesystem object after the filesystem "factory" has been run.
@@ -94,8 +119,6 @@ class MainWP_Helper {
 		 * @global object $wp_filesystem Filesystem object.
 		 */
 		global $wp_filesystem;
-
-		self::get_wp_filesystem();
 
 		$upload_dir = wp_upload_dir();
 		$dir        = $upload_dir['basedir'] . DIRECTORY_SEPARATOR . 'mainwp' . DIRECTORY_SEPARATOR;
@@ -123,6 +146,22 @@ class MainWP_Helper {
 
 		return array( $dir, $url );
 	}
+
+
+	/**
+	 * Method fs_is_connected()
+	 *
+	 * Check if WP FileSystem is connected.
+	 */
+	public static function fs_is_connected() {
+		self::get_wp_filesystem();
+		global $wp_filesystem;
+		if ( ! empty( $wp_filesystem ) && $wp_filesystem->connect() ) {
+			return true;
+		}
+		return false;
+	}
+
 
 	/**
 	 * Method check_dir()
@@ -297,8 +336,9 @@ class MainWP_Helper {
 	 */
 	public static function reject_unsafe_urls( $r, $url ) {
 		$r['reject_unsafe_urls'] = false;
-		$wpadmin_user            = isset( $_POST['wpadmin_user'] ) && ! empty( $_POST['wpadmin_user'] ) ? wp_unslash( $_POST['wpadmin_user'] ) : '';
-		$wpadmin_passwd          = isset( $_POST['wpadmin_passwd'] ) && ! empty( $_POST['wpadmin_passwd'] ) ? wp_unslash( $_POST['wpadmin_passwd'] ) : '';
+		// phpcs:disable WordPress.Security.NonceVerification
+		$wpadmin_user   = isset( $_POST['wpadmin_user'] ) && ! empty( $_POST['wpadmin_user'] ) ? wp_unslash( $_POST['wpadmin_user'] ) : '';
+		$wpadmin_passwd = isset( $_POST['wpadmin_passwd'] ) && ! empty( $_POST['wpadmin_passwd'] ) ? wp_unslash( $_POST['wpadmin_passwd'] ) : '';
 
 		if ( ! empty( $wpadmin_user ) && ! empty( $wpadmin_passwd ) ) {
 			$auth                          = base64_encode( $wpadmin_user . ':' . $wpadmin_passwd ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- base64_encode function is used for backwards compatibility.
@@ -308,7 +348,7 @@ class MainWP_Helper {
 		if ( isset( $_POST['sslVerify'] ) && '0' === $_POST['sslVerify'] ) {
 			$r['sslverify'] = false;
 		}
-
+		// phpcs:enable WordPress.Security.NonceVerification
 		return $r;
 	}
 
@@ -764,6 +804,41 @@ class MainWP_Helper {
 	}
 
 	/**
+	 * Method get_wp_host()
+	 *
+	 * Get host if hosted on the FLYWHEEL or Pressable host.
+	 *
+	 * @return string flywheel|pressable If the child site is hosted on FLYWHEEL or Pressable host.
+	 */
+	public static function get_wp_host() {
+		return self::is_flywheel_host() ? 'flywheel' : ( self::is_pressable_host() ? 'pressable' : '' );
+	}
+
+	/**
+	 * Method is_flywheel_host()
+	 *
+	 * Check if the child site is hosted on the FLYWHEEL server.
+	 *
+	 * @return bool true|false If the child site is hosted on the FLYWHEEL, return true, if not, return false.
+	 */
+	public static function is_flywheel_host() {
+		return defined( 'FLYWHEEL_PLUGIN_DIR' ) && ! empty( FLYWHEEL_PLUGIN_DIR );
+	}
+
+	/**
+	 * Method is_pressable_host()
+	 *
+	 * Check if the child site is hosted on the Pressable host.
+	 *
+	 * @return bool true|false If the child site is hosted on the Pressable host, return true, if not, return false.
+	 */
+	public static function is_pressable_host() {
+		$press_site_id = get_option( 'pressable_site_id', false );
+		return ! empty( $press_site_id );
+	}
+
+
+	/**
 	 * Method maybe_set_doing_cron()
 	 *
 	 * May be define doing cron.
@@ -788,9 +863,19 @@ class MainWP_Helper {
 	 * Method is_dashboard_request()
 	 *
 	 * If it is dashboard request.
+	 *
+	 * @param bool $and_func If true, check 'function' params existed.
+	 *
+	 * @return bool true|false If is dashboard request.
 	 */
-	public static function is_dashboard_request() {
-		return isset( $_POST['mainwpsignature'] ) && isset( $_POST['function'] ) ? true : false;
+	public static function is_dashboard_request( $and_func = false ) {
+		// phpcs:disable WordPress.Security.NonceVerification
+		$check = isset( $_POST['mainwpsignature'] ) ? true : false;
+		if ( $and_func ) {
+			$check = $check && isset( $_POST['function'] );
+		}
+		// phpcs:enable WordPress.Security.NonceVerification
+		return $check;
 	}
 
 

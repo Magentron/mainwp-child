@@ -57,6 +57,7 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 	 * @used-by MainWP_Child_Server_Information::init() Add hooks after WordPress has finished loading but before any headers are sent.
 	 */
 	public static function dismiss_warnings() {
+		// phpcs:disable WordPress.Security.NonceVerification
 		if ( isset( $_POST['what'] ) ) {
 			$dismissWarnings = get_option( 'mainwp_child_dismiss_warnings' );
 			if ( ! is_array( $dismissWarnings ) ) {
@@ -72,6 +73,7 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 			}
 			MainWP_Helper::update_option( 'mainwp_child_dismiss_warnings', $dismissWarnings );
 		}
+		// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	/**
@@ -184,7 +186,7 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 				if ( $warnings > 0 ) {
 					$warning .= '<tr><td colspan="2">This site may not connect to your dashboard or may have other issues. Check your <a href="options-general.php?page=mainwp_child_tab">MainWP server information page</a>.</td><td style="text-align: right;"><a href="#" id="mainwp-child-connect-warning-dismiss">Dismiss</a></td></tr>';
 				}
-				echo $warning;
+				echo $warning; // phpcs:ignore WordPress.Security.EscapeOutput
 				?>
 				</tbody>
 			</table>
@@ -678,7 +680,7 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 			<td style="background: #333; color: #fff;"
 				colspan="5"><?php esc_html_e( 'PHP SETTINGS', 'mainwp-child' ); ?></td>
 		</tr>
-		<?php self::render_row( 'PHP Version', '>=', '5.6', 'get_php_version' ); ?>
+		<?php self::render_row( 'PHP Version', '>=', '7.4', 'get_php_version' ); ?>
 		<tr>
 			<td></td>
 			<td><?php esc_html_e( 'PHP Safe Mode Disabled', 'mainwp-child' ); ?></td>
@@ -695,6 +697,7 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 		self::render_row_sec( 'SSL Warnings', '=', '', 'get_ssl_warning', 'empty', '' );
 		self::render_row_sec( 'cURL Extension Enabled', '=', true, 'get_curl_support', '', '', null, '', null, self::ERROR );
 		self::render_row_sec( 'cURL Timeout', '>=', '300', 'get_curl_timeout', 'seconds', '=', '0' );
+		// phpcs:disable WordPress.Security.EscapeOutput
 		if ( function_exists( 'curl_version' ) ) {
 			self::render_row_sec( 'cURL Version', '>=', '7.18.1', 'get_curl_version', '', '', null );
 			$openssl_version = 'OpenSSL/1.1.0';
@@ -709,10 +712,24 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 				'',
 				'curlssl'
 			);
+
+			$wk = self::get_openssl_working_status();
+			?>
+			<tr>
+				<td></td>
+				<td>OpenSSL Working Status</td>
+				<td>Yes</td>
+				<td><?php echo( $wk ? 'Yes' : 'No' ); ?></td>
+				<td><?php echo( $wk ? '<span class="mainwp-pass"><i class="fa fa-check-circle"></i> Pass</span>' : self::render_warning_text() ); ?></td>
+			</tr>
+
+			<?php
+
 			if ( ! self::curlssl_compare( $openssl_version, '>=' ) ) {
 				echo "<tr style=\"background:#fffaf3\"><td colspan='5'><span class=\"mainwp-warning\"><i class='fa fa-exclamation-circle'>" . sprintf( esc_html__( 'Your host needs to update OpenSSL to at least version 1.1.0 which is already over 4 years old and contains patches for over 60 vulnerabilities.%1$sThese range from Denial of Service to Remote Code Execution. %2$sClick here for more information.%3$s', 'mainwp' ), '<br/>', '<a href="https://community.letsencrypt.org/t/openssl-client-compatibility-changes-for-let-s-encrypt-certificates/143816" target="_blank">', '</a>' ) . '</span></td></tr>';
 			}
 		}
+		// phpcs:enable WordPress.Security.EscapeOutput
 	}
 
 	/**
@@ -1159,16 +1176,17 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 	 */
 	protected static function render_row_sec( $config, $compare, $version, $getter, $extra_text = '', $extra_compare = null, $extra_version = null, $toolTip = null, $whatType = null, $errorType = self::WARNING ) {
 		$currentVersion = call_user_func( array( self::get_class_name(), $getter ) );
+		// phpcs:disable WordPress.Security.EscapeOutput
 		?>
 		<tr>
 			<td></td>
-			<td><?php echo $config; ?></td>
-			<td><?php echo $compare; ?><?php echo ( true === $version ? 'true' : ( is_array( $version ) && isset( $version['version'] ) ? $version['version'] : $version ) ) . ' ' . $extra_text; ?></td>
-			<td><?php echo( true === $currentVersion ? 'true' : $currentVersion ); ?></td>
+			<td><?php echo esc_html( $config ); ?></td>
+			<td><?php echo esc_html( $compare ); ?><?php echo esc_html( true === $version ? 'true' : ( is_array( $version ) && isset( $version['version'] ) ? $version['version'] : $version ) . ' ' . $extra_text ); ?></td>
+			<td><?php echo esc_html( true === $currentVersion ? 'true' : $currentVersion ); ?></td>
 			<?php if ( 'filesize' === $whatType ) { ?>
-				<td><?php echo( self::filesize_compare( $currentVersion, $version, $compare ) ? '<span class="mainwp-pass"><i class="fa fa-check-circle"></i> Pass</span>' : self::render_warning_text( $errorType ) ); ?></td>
+				<td><?php echo ( self::filesize_compare( $currentVersion, $version, $compare ) ? '<span class="mainwp-pass"><i class="fa fa-check-circle"></i> Pass</span>' : self::render_warning_text( $errorType ) ); ?></td>
 			<?php } elseif ( 'get_curl_ssl_version' === $getter ) { ?>
-				<td><?php echo( self::curlssl_compare( $version, $compare ) ? '<span class="mainwp-pass"><i class="fa fa-check-circle"></i> Pass</span>' : self::render_warning_text( $errorType ) ); ?></td>
+				<td><?php echo ( self::curlssl_compare( $version, $compare ) ? '<span class="mainwp-pass"><i class="fa fa-check-circle"></i> Pass</span>' : self::render_warning_text( $errorType ) ); ?></td>
 			<?php } elseif ( ( 'get_max_input_time' === $getter || 'get_max_execution_time' === $getter ) && -1 == $currentVersion ) { ?>
 				<td><?php echo '<span class="mainwp-pass"><i class="fa fa-check-circle"></i> Pass</span>'; ?></td>
 			<?php } else { ?>
@@ -1176,6 +1194,7 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 			<?php } ?>
 		</tr>
 		<?php
+		// phpcs:enable WordPress.Security.EscapeOutput
 	}
 
 	/**
@@ -1264,8 +1283,10 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 			if ( '' == $branding_title ) {
 				$branding_title = 'MainWP';
 			}
-			$msg = esc_html( stripslashes( $branding_title ) ) . ' is unable to find your error logs, please contact your host for server error logs.';
-			echo '<tr><td colspan="2">' . $msg . '</td></tr>';
+			$msg = stripslashes( $branding_title ) . ' is unable to find your error logs, please contact your host for server error logs.';
+			?>
+			<tr><td colspan="2"><?php echo esc_html( $msg ); ?></td></tr>
+			<?php
 			return;
 		}
 
@@ -1317,6 +1338,9 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 
 		// phpcs:disable WordPress.WP.AlternativeFunctions -- to custom read file.
 		$fh = fopen( $path, 'r' );
+		if ( false === $fh || ! is_resource( $fh ) ) {
+			return $lines;
+		}
 		// go to the end of the file.
 		fseek( $fh, 0, SEEK_END );
 
@@ -1413,12 +1437,13 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 			),
 
 		);
+		// phpcs:disable WordPress.Security.EscapeOutput
 		?>
 		<div class="postbox" id="connection_detail">
 			<h3 class="mainwp_box_title"><span><?php esc_html_e( 'Connection details', 'mainwp-child' ); ?></span></h3>
 			<div class="inside">
 				<div class="mainwp-postbox-actions-top mainwp-padding-5">
-					<?php echo sprintf( esc_html__( 'If you are trying to connect this child site to your %s Dashboard, you can use following details to do that. Please note that these are only suggested values.', 'mainwp-child' ), stripslashes( $branding_title ) ); ?>
+					<?php echo sprintf( esc_html__( 'If you are trying to connect this child site to your %s Dashboard, you can use following details to do that. Please note that these are only suggested values.', 'mainwp-child' ), esc_html( stripslashes( $branding_title ) ) ); ?>
 				</div>
 				<table id="mainwp-table" class="wp-list-table widefat" cellspacing="0" style="border: 0">
 					<tbody>
@@ -1438,6 +1463,7 @@ class MainWP_Child_Server_Information extends MainWP_Child_Server_Information_Ba
 			</div>
 		</div>
 		<?php
+		// phpcs:enable WordPress.Security.EscapeOutput
 	}
 
 }

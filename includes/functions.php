@@ -5,6 +5,7 @@
  * @package MainWP/Child
  */
 
+ // phpcs:disable WordPress.Security.NonceVerification
 if ( isset( $_GET['bulk_settings_manageruse_nonce_key'] ) && isset( $_GET['bulk_settings_manageruse_nonce_hmac'] ) ) {
 	$bulk_settings_manageruse_nonce_key  = ! empty( $_GET['bulk_settings_manageruse_nonce_key'] ) ? intval( $_GET['bulk_settings_manageruse_nonce_key'] ) : '';
 	$bulk_settings_manageruse_nonce_hmac = ! empty( $_GET['bulk_settings_manageruse_nonce_hmac'] ) ? wp_unslash( $_GET['bulk_settings_manageruse_nonce_hmac'] ) : '';
@@ -66,7 +67,7 @@ if ( isset( $_GET['bulk_settings_manageruse_nonce_key'] ) && isset( $_GET['bulk_
 						if ( isset( $_REQUEST['bulk_settings_skip_invalid_nonce'] ) && ! empty( $_REQUEST['bulk_settings_skip_invalid_nonce'] ) ) {
 							return false;
 						}
-						die( '<mainwp>' . base64_encode( wp_json_encode( array( 'error' => 'You dont send nonce: ' . $action . '<br/>Trace: ' . $stackTrace ) ) ) . '</mainwp>' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- base64_encode function is used for http encode compatible..
+						die( '<mainwp>' . base64_encode( wp_json_encode( array( 'error' => 'You dont send nonce: ' . $action . '<br/>Trace: ' . $stackTrace ) ) ) . '</mainwp>' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions,WordPress.Security.EscapeOutput -- base64_encode function is used for http encode compatible.
 					}
 
 					/**
@@ -111,7 +112,7 @@ if ( isset( $_GET['bulk_settings_manageruse_nonce_key'] ) && isset( $_GET['bulk_
 						return false;
 					}
 					// Invalid nonce.
-					die( '<mainwp>' . base64_encode( wp_json_encode( array( 'error' => 'Invalid nonce! Try to use: ' . $action . '<br/>Trace: ' . $stackTrace ) ) ) . '</mainwp>' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- base64_encode function is used for http encode compatible..
+					die( '<mainwp>' . base64_encode( wp_json_encode( array( 'error' => 'Invalid nonce! Try to use: ' . $action . '<br/>Trace: ' . $stackTrace ) ) ) . '</mainwp>' ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions,WordPress.Security.EscapeOutput -- base64_encode function is used for http encode compatible.
 				}
 			endif;
 		}
@@ -170,3 +171,29 @@ if ( ! function_exists( 'mainwp_child_backwpup_wp_list_table_dependency' ) ) {
 		}
 	}
 }
+
+if ( ! function_exists( 'apply_filters_deprecated' ) ) {
+	/**
+	 * Support old WP version 4.0.
+	 *
+	 * Fires functions attached to a deprecated filter hook.
+	 *
+	 * When a filter hook is deprecated, the apply_filters() call is replaced with
+	 * apply_filters_deprecated(), which triggers a deprecation notice and then fires
+	 * the original filter hook.
+	 *
+	 * @param string $hook_name   The name of the filter hook.
+	 * @param array  $args        Array of additional function arguments to be passed to apply_filters().
+	 * @param string $version     The version of WordPress that deprecated the hook.
+	 * @param string $replacement Optional. The hook that should have been used. Default empty.
+	 * @param string $message     Optional. A message regarding the change. Default empty.
+	 */
+	function apply_filters_deprecated( $hook_name, $args, $version, $replacement = '', $message = '' ) {
+		if ( ! has_filter( $hook_name ) ) {
+			return $args[0];
+		}
+		do_action( 'deprecated_hook_run', $hook_name, $replacement, $version, $message );
+		return apply_filters_ref_array( $hook_name, $args );
+	}
+}
+

@@ -76,7 +76,7 @@ class MainWP_Connect {
 		global $current_user;
 
 		$information = array();
-
+		// phpcs:disable WordPress.Security.NonceVerification
 		// Check if the user is valid & login.
 		if ( ! isset( $_POST['user'] ) || ! isset( $_POST['pubkey'] ) ) {
 			MainWP_Helper::instance()->error( sprintf( esc_html__( 'Public key could not be set. Please make sure that the OpenSSL library has been configured correctly on your MainWP Dashboard. For additional help, please check this %1$shelp document%2$s.', 'mainwp-child' ), '<strong><a href="https://kb.mainwp.com/docs/cant-connect-website-getting-the-invalid-request-error-message/" target="_blank">', '</a></strong>' ) );
@@ -124,27 +124,12 @@ class MainWP_Connect {
 		// Save the nonce.
 		MainWP_Helper::update_option( 'mainwp_child_nonce', 0 );
 
-		// Update the mainwp_child_nossl option.
-		MainWP_Helper::update_option( 'mainwp_child_nossl', ( '-1' === $_POST['pubkey'] || ! MainWP_Helper::is_ssl_enabled() ? 1 : 0 ), 'yes' );
-
-		$information['nossl'] = ( '-1' === $_POST['pubkey'] || ! MainWP_Helper::is_ssl_enabled() ? 1 : 0 );
-
-		if ( function_exists( 'random_bytes' ) ) {
-			$nossl_key = random_bytes( 32 );
-			$nossl_key = bin2hex( $nossl_key );
-		} else {
-			$nossl_key = uniqid( '', true );
-		}
-
-		// Update the mainwp_child_nossl_key option.
-		MainWP_Helper::update_option( 'mainwp_child_nossl_key', $nossl_key, 'yes' );
 		MainWP_Helper::update_option( 'mainwp_child_connected_admin', $current_user->user_login, 'yes' );
 
-		$information['nosslkey'] = $nossl_key;
 		$information['register'] = 'OK';
 		$information['uniqueId'] = MainWP_Helper::get_site_unique_id();
 		$information['user']     = isset( $_POST['user'] ) ? sanitize_text_field( wp_unslash( $_POST['user'] ) ) : '';
-
+		// phpcs:enable WordPress.Security.NonceVerification
 		MainWP_Child_Stats::get_instance()->get_site_stats( $information ); // get stats and exit.
 	}
 
@@ -163,7 +148,7 @@ class MainWP_Connect {
 	 * @uses \MainWP\Child\MainWP_Helper::instance()->error()
 	 */
 	public function parse_init_auth( $auth = false ) { // phpcs:ignore -- Current complexity is the only way to achieve desired results, pull request solutions appreciated.
-
+		// phpcs:disable WordPress.Security.NonceVerification
 		if ( ! $auth && isset( $_POST['mainwpsignature'] ) ) { // with 'mainwpsignature' then need to callable functions.
 			MainWP_Helper::instance()->error( esc_html__( 'Authentication failed! Please deactivate & re-activate the MainWP Child plugin on this child site and try again.', 'mainwp-child' ) );
 		}
@@ -252,6 +237,8 @@ class MainWP_Connect {
 			}
 		}
 
+		// phpcs:enable WordPress.Security.NonceVerification
+
 		return true;
 	}
 
@@ -263,27 +250,164 @@ class MainWP_Connect {
 	 * @param  string $signature MainWP Dashboard signature.
 	 * @param  string $func      Function to run.
 	 * @param  string $nonce     Security nonce.
-	 * @param  int    $nossl     OpenSSL not availalbe. NoSSL connection required.
 	 *
 	 * @return int|bool $auth  Returns 1 if authenticated, false if authentication fails.
 	 */
-	public function auth( $signature, $func, $nonce, $nossl ) {
-		if ( empty( $signature ) || ! isset( $func ) || ( ! get_option( 'mainwp_child_pubkey' ) && ! get_option( 'mainwp_child_nossl_key' ) ) ) {
+	public function auth( $signature, $func, $nonce ) {
+		// phpcs:disable WordPress.Security.NonceVerification
+		if ( empty( $signature ) || ! isset( $func ) || ! get_option( 'mainwp_child_pubkey' ) ) {
 			$auth = false;
 		} else {
-			$nossl       = get_option( 'mainwp_child_nossl' );
-			$serverNoSsl = ( isset( $nossl ) && 1 === (int) $nossl );
-			if ( ( 1 === (int) $nossl ) || $serverNoSsl ) {
-				$nossl_key = get_option( 'mainwp_child_nossl_key' );
-				$auth      = hash_equals( md5( $func . $nonce . $nossl_key ), base64_decode( $signature ) ); // // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- base64_encode function is used for http encode compatible.
-			} else {
-				$auth = openssl_verify( $func . $nonce, base64_decode( $signature ), base64_decode( get_option( 'mainwp_child_pubkey' ) ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- base64_encode function is used for http encode compatible.
-				if ( 1 !== $auth ) {
-					$auth = false;
-				}
+				$algo = false;
+			if ( isset( $_REQUEST['sign_algo'] ) ) {
+				$algo = sanitize_text_field( wp_unslash( $_REQUEST['sign_algo'] ) );
+			}
+				$auth = self::connect_verify( $func . $nonce, base64_decode( $signature ), base64_decode( get_option( 'mainwp_child_pubkey' ) ), $algo ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- trust value.
+			if ( 1 !== $auth ) {
+				$auth = false;
 			}
 		}
+		// phpcs:enable WordPress.Security.NonceVerification
 		return $auth;
+	}
+
+	/**
+	 * Method connect_verify()
+	 *
+	 * Verify connect.
+	 *
+	 * @param string $data Data sign.
+	 * @param string $signature signature.
+	 * @param string $pubkey Public key.
+	 * @param mixed  $alg signature algorithm.
+	 *
+	 * @return bool Connect valid or not.
+	 */
+	public static function connect_verify( $data, $signature, $pubkey, $alg ) {
+		// phpcs:disable WordPress.Security.NonceVerification
+		$use_seclib = isset( $_REQUEST['verifylib'] ) && ! empty( $_REQUEST['verifylib'] ) ? true : false;
+		// phpcs:enable WordPress.Security.NonceVerification
+		if ( $use_seclib ) {
+			return MainWP_Connect_Lib::verify( $data, $signature, $pubkey );
+		} else {
+			$verify = 0;
+			if ( false === $alg ) {
+				$child_sign_algo = get_option( 'mainwp_child_openssl_sign_algo', false );
+				if ( false === $child_sign_algo ) { // to compatible.
+					$verify = openssl_verify( $data, $signature, $pubkey ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- base64_encode function is used for http encode compatible.
+				}
+			} else {
+				$alg = self::get_connect_sign_algorithm( $alg );
+				self::check_to_requires_reconnect_for_sha1_safe( $alg );
+				$verify = openssl_verify( $data, $signature, $pubkey, $alg ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- base64_encode function is used for http encode compatible.
+				if ( 1 === $verify ) {
+					self::maybe_update_child_sign_algo( $alg );
+				}
+			}
+			return $verify;
+		}
+	}
+
+	/**
+	 * Method get_connect_sign_algorithm().
+	 *
+	 * Get supported sign algorithms.
+	 *
+	 * @param mixed $alg Input value.
+	 *
+	 * @return mixed $alg Valid algorithm value.
+	 */
+	public static function get_connect_sign_algorithm( $alg ) {
+		if ( is_numeric( $alg ) ) {
+			$alg = intval( $alg );
+		}
+		if ( ! self::is_valid_supported_sign_alg( $alg ) ) {
+			$alg = false;
+		}
+		return $alg;
+	}
+
+	/**
+	 * Method is_valid_supported_sign_alg().
+	 *
+	 * Check if valid supported Sign Algo value.
+	 *
+	 * @param mixed $alg Input value.
+	 *
+	 * @return mixed $valid Valid algorithm value.
+	 */
+	public static function is_valid_supported_sign_alg( $alg ) {
+		$valid = false;
+		if ( defined( 'OPENSSL_ALGO_SHA1' ) && OPENSSL_ALGO_SHA1 === $alg ) {
+			$valid = true;
+		} elseif ( defined( 'OPENSSL_ALGO_SHA224' ) && OPENSSL_ALGO_SHA224 === $alg ) {
+			$valid = true;
+		} elseif ( defined( 'OPENSSL_ALGO_SHA256' ) && OPENSSL_ALGO_SHA256 === $alg ) {
+			$valid = true;
+		} elseif ( defined( 'OPENSSL_ALGO_SHA384' ) && OPENSSL_ALGO_SHA384 === $alg ) {
+			$valid = true;
+		} elseif ( defined( 'OPENSSL_ALGO_SHA512' ) && OPENSSL_ALGO_SHA512 === $alg ) {
+			$valid = true;
+		}
+		return $valid;
+	}
+
+	/**
+	 * Method check_to_requires_reconnect_for_sha1_safe()
+	 *
+	 * Check if need to deactive/active child plugin.
+	 *
+	 * @param int $alg_new Algo value.
+	 * @throws Exception|\Exception Error exception.
+	 */
+	public static function check_to_requires_reconnect_for_sha1_safe( $alg_new ) {
+		$child_sign_algo = get_option( 'mainwp_child_openssl_sign_algo', false );
+		if ( false === $alg_new && false === $child_sign_algo ) {
+			return;
+		}
+
+		if ( is_numeric( $alg_new ) ) {
+			$alg_new = intval( $alg_new );
+		}
+
+		if ( is_numeric( $child_sign_algo ) ) {
+			$child_sign_algo = intval( $child_sign_algo );
+		}
+		if ( ! empty( $child_sign_algo ) && defined( 'OPENSSL_ALGO_SHA1' ) && OPENSSL_ALGO_SHA1 !== $child_sign_algo && OPENSSL_ALGO_SHA1 === $alg_new ) {
+			throw new \Exception( esc_html__( 'To use OPENSSL_ALGO_SHA1 OpenSSL signature algorithm. Please deactivate & reactivate the MainWP Child plugin on the child site and try again.', 'mainwp-child' ) );
+		}
+	}
+
+	/**
+	 * Method maybe_update_child_sign_algo()
+	 *
+	 * Check if need to update child sign algo settings.
+	 *
+	 * @param int $alg_new Algo value.
+	 */
+	public static function maybe_update_child_sign_algo( $alg_new ) {
+
+		$child_sign_algo = get_option( 'mainwp_child_openssl_sign_algo', false );
+
+		if ( is_numeric( $child_sign_algo ) ) {
+			$child_sign_algo = intval( $child_sign_algo );
+		}
+
+		$update = false;
+		if ( false === $child_sign_algo ) {
+			if ( false !== $alg_new ) {
+				$update = true;
+			}
+		} elseif ( $alg_new !== $child_sign_algo ) {
+			if ( defined( 'OPENSSL_ALGO_SHA1' ) && OPENSSL_ALGO_SHA1 !== $alg_new ) {
+				$update = true;
+			}
+		}
+
+		if ( $update ) {
+			// setting changed, need to update.
+			update_option( 'mainwp_child_openssl_sign_algo', $alg_new );
+		}
 	}
 
 	/**
@@ -291,6 +415,7 @@ class MainWP_Connect {
 	 *
 	 * Check if the login process is required.
 	 *
+	 * @throws Exception|\Exception Error exception.
 	 * @return bool Return true on success, false on failure.
 	 */
 	public function parse_login_required() { // phpcs:ignore -- Current complexity is the only way to achieve desired results, pull request solutions appreciated.
@@ -301,12 +426,12 @@ class MainWP_Connect {
 		 * @global string
 		 */
 		global $current_user;
-
+		// phpcs:disable WordPress.Security.NonceVerification
 		$alter_login_required = false;
 		$username             = isset( $_REQUEST['user'] ) ? rawurldecode( wp_unslash( $_REQUEST['user'] ) ) : '';
 
 		if ( isset( $_REQUEST['alt_user'] ) ) {
-			$alter_login_required = ! empty( $_REQUEST['alt_user'] ) ? self::instance()->check_login_as( wp_unslash( $_REQUEST['alt_user'] ) ) : false;
+			$alter_login_required = ! empty( $_REQUEST['alt_user'] ) ? $this->check_login_as( wp_unslash( $_REQUEST['alt_user'] ) ) : false;
 			if ( $alter_login_required ) {
 				$username = isset( $_REQUEST['alt_user'] ) ? rawurldecode( wp_unslash( $_REQUEST['alt_user'] ) ) : '';
 			}
@@ -322,11 +447,14 @@ class MainWP_Connect {
 
 		$file = $this->get_request_files();
 
-		$where = isset( $_REQUEST['where'] ) ? rawurldecode( wp_unslash( $_REQUEST['where'] ) ) : null;
-		$nonce = isset( $_REQUEST['nonce'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['nonce'] ) ) : '';
-		$nossl = isset( $_REQUEST['nossl'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['nossl'] ) ) : 0;
+		$function = ! empty( $_POST['function'] ) ? sanitize_text_field( wp_unslash( $_POST['function'] ) ) : rawurldecode( ( isset( $_REQUEST['where'] ) ? wp_unslash( $_REQUEST['where'] ) : $file ) );
+		$nonce    = isset( $_REQUEST['nonce'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['nonce'] ) ) : '';
 
-		$auth = self::instance()->auth( $signature, $where, $nonce, $nossl );
+		try {
+			$auth = $this->auth( $signature, $function, $nonce );
+		} catch ( \Exception $ex ) {
+			$auth = false;
+		}
 
 		if ( ! $auth ) {
 			return false;
@@ -348,6 +476,7 @@ class MainWP_Connect {
 				}
 			}
 		}
+		// phpcs:enable WordPress.Security.NonceVerification
 		$this->check_redirects();
 		return true;
 	}
@@ -360,6 +489,7 @@ class MainWP_Connect {
 	 * @return resource Requested file.
 	 */
 	private function get_request_files() {
+		// phpcs:disable WordPress.Security.NonceVerification
 		$file = '';
 		if ( isset( $_REQUEST['f'] ) ) {
 			$file = ! empty( $_REQUEST['f'] ) ? wp_unslash( $_REQUEST['f'] ) : '';
@@ -368,6 +498,7 @@ class MainWP_Connect {
 		} elseif ( isset( $_REQUEST['fdl'] ) ) {
 			$file = ! empty( $_REQUEST['fdl'] ) ? wp_unslash( $_REQUEST['fdl'] ) : '';
 		}
+		// phpcs:enable WordPress.Security.NonceVerification
 		return $file;
 	}
 
@@ -381,6 +512,7 @@ class MainWP_Connect {
 	 * @uses \MainWP\Child\MainWP_Utility::upload_file()
 	 */
 	private function check_redirects() {
+		// phpcs:disable WordPress.Security.NonceVerification
 		if ( isset( $_REQUEST['fdl'] ) ) {
 			$fdl = isset( $_REQUEST['fdl'] ) ? wp_unslash( $_REQUEST['fdl'] ) : '';
 			if ( empty( $fdl ) || stristr( $fdl, '..' ) ) {
@@ -398,7 +530,7 @@ class MainWP_Connect {
 		if ( ! empty( $open_locatio ) ) {
 			$this->open_location_redirect( $open_location );
 		}
-
+		// phpcs:enable WordPress.Security.NonceVerification
 		$this->where_redirect();
 	}
 
@@ -460,6 +592,7 @@ class MainWP_Connect {
 	 * Safe redirect to wanted location.
 	 */
 	private function where_redirect() {
+		// phpcs:disable WordPress.Security.NonceVerification
 		$where = isset( $_REQUEST['where'] ) ? wp_unslash( $_REQUEST['where'] ) : '';
 		if ( isset( $_POST['f'] ) || isset( $_POST['file'] ) ) {
 			$file = '';
@@ -475,6 +608,7 @@ class MainWP_Connect {
 			$_SESSION['file'] = $file;
 			$_SESSION['size'] = isset( $_POST['size'] ) ? sanitize_text_field( wp_unslash( $_POST['size'] ) ) : '';
 		}
+		// phpcs:enable WordPress.Security.NonceVerification
 		wp_safe_redirect( admin_url( $where ) );
 		exit();
 	}
@@ -486,10 +620,12 @@ class MainWP_Connect {
 	 *
 	 * @return bool Return false if $_POST['mainwpsignature'] is not set.
 	 *
+	 * @throws Exception|\Exception Error exception.
 	 * @uses MainWP_Connect::login() Handle the login process.
 	 * @uses \MainWP\Child\MainWP_Helper::instance()->error()
 	 */
 	public function check_login() { // phpcs:ignore -- Current complexity is the only way to achieve desired results, pull request solutions appreciated.
+		// phpcs:disable WordPress.Security.NonceVerification
 		if ( ! isset( $_POST['mainwpsignature'] ) || empty( $_POST['mainwpsignature'] ) ) {
 			return false;
 		}
@@ -498,10 +634,17 @@ class MainWP_Connect {
 
 		$mainwpsignature = isset( $_POST['mainwpsignature'] ) ? rawurldecode( wp_unslash( $_POST['mainwpsignature'] ) ) : '';
 		$function        = ! empty( $_POST['function'] ) ? sanitize_text_field( wp_unslash( $_POST['function'] ) ) : rawurldecode( ( isset( $_REQUEST['where'] ) ? wp_unslash( $_REQUEST['where'] ) : $file ) );
-		$nonce           = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
-		$nossl           = isset( $_POST['nossl'] ) ? sanitize_text_field( wp_unslash( $_POST['nossl'] ) ) : 0;
+		$nonce           = MainWP_System::instance()->validate_params( 'nonce' );
 
-		$auth = self::instance()->auth( $mainwpsignature, $function, $nonce, $nossl );
+		try {
+			$auth = $this->auth( $mainwpsignature, $function, $nonce );
+		} catch ( \Exception $ex ) {
+			$error = $ex->getMessage();
+			if ( ! empty( $error ) && is_string( $error ) ) {
+				MainWP_Helper::instance()->error( esc_html( $error ) );
+			}
+			$auth = false;
+		}
 
 		if ( ! $auth ) {
 			MainWP_Helper::instance()->error( esc_html__( 'Authentication failed! Please deactivate and re-activate the MainWP Child plugin on this site.', 'mainwp-child' ) );
@@ -550,6 +693,7 @@ class MainWP_Connect {
 				die();
 			}
 		}
+		// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	/**
@@ -656,7 +800,7 @@ class MainWP_Connect {
 	public function check_other_auth() {
 		$auths = get_option( 'mainwp_child_auth' );
 
-		if ( ! $auths ) {
+		if ( ! is_array( $auths ) ) {
 			$auths = array();
 		}
 
@@ -690,7 +834,7 @@ class MainWP_Connect {
 	 */
 	public function is_valid_auth( $key ) {
 		$auths = get_option( 'mainwp_child_auth' );
-		if ( ! $auths ) {
+		if ( ! is_array( $auths ) ) {
 			return false;
 		}
 		for ( $i = 0; $i <= $this->maxHistory; $i ++ ) {
@@ -720,7 +864,7 @@ class MainWP_Connect {
 	 */
 	public function check_compatible_connect_info( $logged_in ) {
 		global $current_user;
-		$connect_user = isset( $_POST['user'] ) ? wp_unslash( $_POST['user'] ) : '';
+		$connect_user = isset( $_POST['user'] ) ? wp_unslash( $_POST['user'] ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
 		if ( ! empty( $connect_user ) && $current_user->user_login == $connect_user ) {
 			$connected_admin = get_option( 'mainwp_child_connected_admin', '' );
 			if ( empty( $connected_admin ) ) {

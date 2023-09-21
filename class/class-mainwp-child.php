@@ -33,7 +33,7 @@ class MainWP_Child {
 	 *
 	 * @var string MainWP Child plugin version.
 	 */
-	public static $version = '4.4';
+	public static $version = '4.5.1';
 
 	/**
 	 * Private variable containing the latest MainWP Child update version.
@@ -87,6 +87,7 @@ class MainWP_Child {
 		add_action( 'init', array( &$this, 'parse_init' ), 9999 );
 		add_action( 'init', array( &$this, 'localization' ), 33 );
 		add_action( 'admin_init', array( &$this, 'admin_init' ) );
+		add_action( 'plugin_action_links_mainwp-child/mainwp-child.php', array( &$this, 'plugin_settings_link' ) );
 
 		// support for better detection for premium plugins.
 		add_action( 'pre_current_active_plugins', array( MainWP_Child_Updates::get_instance(), 'detect_premium_themesplugins_updates' ) );
@@ -118,7 +119,7 @@ class MainWP_Child {
 		}
 
 		if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
-			if ( isset( $_GET['mainwp_child_run'] ) && ! empty( $_GET['mainwp_child_run'] ) ) {
+			if ( isset( $_GET['mainwp_child_run'] ) && ! empty( $_GET['mainwp_child_run'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
 				add_action( 'init', array( MainWP_Utility::get_class_name(), 'cron_active' ), PHP_INT_MAX );
 			}
 		}
@@ -129,6 +130,10 @@ class MainWP_Child {
 		 * @since 4.3
 		 */
 		add_action( 'mainwp_child_write', array( MainWP_Helper::class, 'write' ) );
+
+		add_filter( 'mainwp_child_create_action_nonce', array( MainWP_Utility::class, 'hook_create_nonce_action' ), 10, 2 );
+		add_filter( 'mainwp_child_verify_authed_acion_nonce', array( MainWP_Utility::class, 'hook_verify_authed_action_nonce' ), 10, 2 );
+		add_filter( 'mainwp_child_get_ping_nonce', array( MainWP_Utility::class, 'hook_get_ping_nonce' ), 10, 2 );
 	}
 
 	/**
@@ -173,7 +178,6 @@ class MainWP_Child {
 				'mainwp_child_restore_permalink',
 				'mainwp_ext_snippets_enabled',
 				'mainwp_child_pubkey',
-				'mainwp_child_nossl',
 				'mainwp_security',
 				'mainwp_backupwordpress_ext_enabled',
 				'mainwp_pagespeed_ext_enabled',
@@ -183,9 +187,9 @@ class MainWP_Child {
 				'mainwp_wp_staging_ext_enabled',
 				'mainwp_child_connected_admin',
 				'mainwp_child_actions_saved_number_of_days',
-
+				'mainwp_child_pingnonce',
 			);
-			$query = "SELECT option_name, option_value FROM $wpdb->options WHERE option_name in (";
+			$query    = "SELECT option_name, option_value FROM $wpdb->options WHERE option_name in (";
 			foreach ( $options as $option ) {
 				$query .= "'" . $option . "', ";
 			}
@@ -276,7 +280,7 @@ class MainWP_Child {
 	 * @uses \MainWP\Child\MainWP_Utility::fix_for_custom_themes()
 	 */
 	public function parse_init() {
-
+		// phpcs:disable WordPress.Security.NonceVerification
 		if ( isset( $_REQUEST['cloneFunc'] ) ) {
 			$valid_clone = MainWP_Clone::instance()->request_clone_funct();
 			if ( ! $valid_clone ) {
@@ -304,11 +308,12 @@ class MainWP_Child {
 
 		$mainwpsignature = isset( $_POST['mainwpsignature'] ) ? rawurldecode( wp_unslash( $_POST['mainwpsignature'] ) ) : '';
 		$function        = isset( $_POST['function'] ) ? sanitize_text_field( wp_unslash( $_POST['function'] ) ) : null;
-		$nonce           = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
-		$nossl           = isset( $_POST['nossl'] ) ? sanitize_text_field( wp_unslash( $_POST['nossl'] ) ) : 0;
+		$nonce           = MainWP_System::instance()->validate_params( 'nonce' );
+
+		// phpcs:enable WordPress.Security.NonceVerification
 
 		// Authenticate here.
-		$auth = MainWP_Connect::instance()->auth( $mainwpsignature, $function, $nonce, $nossl );
+		$auth = MainWP_Connect::instance()->auth( $mainwpsignature, $function, $nonce );
 
 		// Parse auth, if it is not correct actions then exit with message or return.
 		if ( ! MainWP_Connect::instance()->parse_init_auth( $auth ) ) {
@@ -415,14 +420,13 @@ class MainWP_Child {
 		$to_delete   = array(
 			'mainwp_child_pubkey',
 			'mainwp_child_nonce',
-			'mainwp_child_nossl',
-			'mainwp_child_nossl_key',
 			'mainwp_security',
 			'mainwp_child_server',
 			'mainwp_child_connected_admin',
 		);
 		$to_delete[] = 'mainwp_ext_snippets_enabled';
 		$to_delete[] = 'mainwp_ext_code_snippets';
+		$to_delete[] = 'mainwp_child_openssl_sign_algo';
 
 		foreach ( $to_delete as $delete ) {
 			if ( get_option( $delete ) ) {
@@ -452,9 +456,8 @@ class MainWP_Child {
 		$to_delete = array(
 			'mainwp_child_pubkey',
 			'mainwp_child_nonce',
-			'mainwp_child_nossl',
-			'mainwp_child_nossl_key',
 			'mainwp_child_connected_admin',
+			'mainwp_child_openssl_sign_algo',
 		);
 		foreach ( $to_delete as $delete ) {
 			if ( get_option( $delete ) ) {
@@ -470,4 +473,20 @@ class MainWP_Child {
 		}
 	}
 
+	/**
+	 * Method plugin_settings_link()
+	 *
+	 * On the plugins page add a link to the MainWP settings page.
+	 *
+	 * @param array $actions An array of plugin action links. Should include `deactivate`.
+	 *
+	 * @return array
+	 */
+	public function plugin_settings_link( $actions ) {
+		$href          = admin_url( 'options-general.php?page=mainwp_child_tab' );
+		$settings_link = '<a href="' . $href . '">' . __( 'Settings' ) . '</a>'; // phpcs:ignore WordPress.WP.I18n.MissingArgDomain
+		array_unshift( $actions, $settings_link );
+
+		return $actions;
+	}
 }

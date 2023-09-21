@@ -261,7 +261,7 @@ class MainWP_Child_Server_Information_Base {
 	 *
 	 * @return string $fs The returned file system method.
 	 */
-	protected static function get_file_system_method() {
+	public static function get_file_system_method() {
 		if ( defined( 'MAINWP_SAVE_FS_METHOD' ) ) {
 			return MAINWP_SAVE_FS_METHOD;
 		}
@@ -382,17 +382,63 @@ class MainWP_Child_Server_Information_Base {
 	 * @return false|string Return error message if there are warnings, FALSE otherwise.
 	 */
 	protected static function get_ssl_warning() {
-		$conf = array( 'private_key_bits' => 2048 );
-		$str  = '';
+
+		$conf   = array( 'private_key_bits' => 2048 );
+		$errors = array();
 		if ( function_exists( 'openssl_pkey_new' ) ) {
 			$res = openssl_pkey_new( $conf );
 			openssl_pkey_export( $res, $privkey );
 
-			$str = openssl_error_string();
+			$error = '';
+			while ( ( $errorRow = openssl_error_string() ) !== false ) {
+				$error = $errorRow . "\n" . $error;
+			}
+			//phpcs:ignore -- Note.
+			// $error = ( stristr( $error, 'NCONF_get_string:no value' ) ? '' : $error );
+			if ( ! empty( $error ) ) {
+				$errors[] = $error;
+			}
 		}
-		return ( stristr( $str, 'NCONF_get_string:no value' ) ? '' : $str );
+
+		return empty( $errors ) ? '' : implode( ' - ', $errors );
 	}
 
+
+	/**
+	 * To verify openssl working.
+	 *
+	 * @return bool Working status.
+	 */
+	public static function get_openssl_working_status() {
+
+		$ok = false;
+
+		if ( function_exists( 'openssl_verify' ) && function_exists( 'openssl_pkey_new' ) ) {
+
+			$conf = array(
+				'private_key_bits' => 2048,
+			);
+
+			$res = openssl_pkey_new( $conf );
+
+			@openssl_pkey_export( $res, $privkey, null, $conf ); // phpcs:ignore -- prevent warning.
+			$details = openssl_pkey_get_details( $res );
+
+			if ( is_array( $details ) && isset( $details['key'] ) ) {
+				$publicKey = $details['key'];
+
+				$data = 'working status';
+
+				openssl_sign( $data, $signature, $privkey ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- base64_encode used for http encoding compatible.
+
+				if ( ! empty( $signature ) ) {
+					$ok = openssl_verify( $data, $signature, $publicKey );
+				}
+			}
+		}
+
+		return 1 === $ok;
+	}
 	/**
 	 * Get current PHP version.
 	 *
@@ -714,7 +760,7 @@ class MainWP_Child_Server_Information_Base {
 		if ( empty( $test_result ) ) {
 			esc_html_e( 'Response Test O.K.', 'mainwp-child' );
 		} else {
-			echo $test_result;
+			echo $test_result; // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 	}
 
@@ -730,7 +776,7 @@ class MainWP_Child_Server_Information_Base {
 	 * Get server remote host.
 	 */
 	protected static function get_remote_host() {
-		echo ! empty( $_SERVER['REMOTE_HOST'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_HOST'] ) ) : esc_html( 'N/A' );
+		echo ! empty( $_SERVER['REMOTE_HOST'] ) ? esc_html( sanitize_text_field( wp_unslash( $_SERVER['REMOTE_HOST'] ) ) ) : esc_html( 'N/A' );
 	}
 
 	/**

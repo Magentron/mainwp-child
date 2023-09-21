@@ -221,7 +221,7 @@ class MainWP_Clone_Page {
 				<form action="<?php echo esc_attr( admin_url( 'options-general.php?page=mainwp_child_tab&tab=restore-clone&upload=yes' ) ); ?>" method="post" enctype="multipart/form-data">
 					<input type="file" name="file" id="file"/>
 					<input type="submit" name="submit" id="filesubmit" class="button button-primary" disabled="disabled" value="<?php esc_attr_e( 'Clone/Restore Website', 'mainwp-child' ); ?>"/>
-					<input type="hidden" name="_nonce" value="<?php echo wp_create_nonce( 'cloneRestore' ); ?>" />
+					<input type="hidden" name="_nonce" value="<?php echo esc_html( wp_create_nonce( 'cloneRestore' ) ); ?>" />
 				</form>
 			</div>
 		</div>
@@ -301,19 +301,19 @@ class MainWP_Clone_Page {
 					<?php
 						$branding_title = MainWP_Child_Branding::instance()->get_branding_title();
 					if ( '' != $branding_title ) {
-						$branding_msg = 'If you have a FULL backup created by basic ' . esc_html( stripslashes( $branding_title ) ) . ' Backup system you may restore it by uploading here. Backups created by 3rd party plugins will not work.';
+						$branding_msg = 'If you have a FULL backup created by basic ' . stripslashes( $branding_title ) . ' Backup system you may restore it by uploading here. Backups created by 3rd party plugins will not work.';
 					} else {
 						$branding_msg = esc_html__( 'If you have a FULL backup created by basic MainWP Backup system you may restore it by uploading here. Backups created by 3rd party plugins will not work.', 'mainwp-child' );
 					}
 					?>
 						<em>
-							<?php echo $branding_msg; ?><br/>
+							<?php echo esc_html( $branding_msg ); ?><br/>
 							<?php esc_html_e( 'A database only backup will not work.', 'mainwp-child' ); ?>
 						</em><br/><br/>
 					<form action="<?php echo esc_attr( admin_url( 'options-general.php?page=mainwp_child_tab&tab=restore-clone&upload=yes' ) ); ?>" method="post" enctype="multipart/form-data">
 						<input type="file" name="file" id="file" />
 						<input type="submit" name="submit" class="button button-primary" id="filesubmit" disabled="disabled" value="<?php esc_attr_e( 'Restore Website', 'mainwp-child' ); ?>"/>
-						<input type="hidden" name="_nonce" value="<?php echo wp_create_nonce( 'cloneRestore' ); ?>" />
+						<input type="hidden" name="_nonce" value="<?php echo esc_html( wp_create_nonce( 'cloneRestore' ) ); ?>" />
 					</form>
 				<?php } ?>
 			</div>
@@ -342,6 +342,7 @@ class MainWP_Clone_Page {
 	 * @uses \MainWP\Child\MainWP_Helper::update_option()
 	 */
 	private static function render_clone_from_server() {
+		// phpcs:disable WordPress.Security.NonceVerification
 		$page         = isset( $_REQUEST['page'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['page'] ) ) : '';
 		$sitesToClone = get_option( 'mainwp_child_clone_sites' );
 		$url          = admin_url( 'options-general.php?page=mainwp_child_tab&tab=restore-clone#title_03' );
@@ -356,7 +357,7 @@ class MainWP_Clone_Page {
 				$current_dir = get_option( 'mainwp_child_clone_from_server_last_folder' ) . $current_dir;
 			}
 		}
-
+		// phpcs:enable WordPress.Security.NonceVerification
 		if ( ! is_readable( $current_dir ) ) {
 			$current_dir = WP_CONTENT_DIR;
 		}
@@ -388,11 +389,11 @@ class MainWP_Clone_Page {
 			if ( strlen( $adir ) > 1 ) {
 				$adir = ltrim( $adir, '/' );
 			}
-			$durl     = esc_url( add_query_arg( array( 'dir' => rawurlencode( $adir ) ), $url ) );
-			$dirparts = '<a href="' . $durl . '">' . $part . DIRECTORY_SEPARATOR . '</a>' . $dirparts;
+			$durl     = add_query_arg( array( 'dir' => rawurlencode( $adir ) ), $url );
+			$dirparts = '<a href="' . esc_url( $durl ) . '">' . $part . DIRECTORY_SEPARATOR . '</a>' . $dirparts;
 		}
 
-		echo '<div style="padding: 8px 12px; background-color: #e5e5e5; margin-top: 1em;">' . esc_html__( '<strong>Current Directory:</strong> <span>' . $dirparts . '</span>', 'mainwp-child' ) . '</div>';
+		echo '<div style="padding: 8px 12px; background-color: #e5e5e5; margin-top: 1em;">' . sprintf( esc_html__( '%1$sCurrent Directory:%2$s %3$s', 'mainwp-child' ), '<strong>', '</strong>', '<span>' . $dirparts . '</span>' ) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		$quick_dirs   = array();
 		$quick_dirs[] = array( esc_html__( 'Site Root', 'mainwp-child' ), ABSPATH );
 		$quick_dirs[] = array( esc_html__( 'Backup', 'mainwp-child' ), $backup_dir );
@@ -409,12 +410,12 @@ class MainWP_Clone_Page {
 			if ( strlen( $adir ) > 1 ) {
 				$adir = ltrim( $adir, '/' );
 			}
-			$durl          = esc_url( add_query_arg( array( 'dir' => rawurlencode( $adir ) ), $url ) );
-			$quick_links[] = "<a href='$durl'>$text</a>";
+			$durl          = add_query_arg( array( 'dir' => rawurlencode( $adir ) ), $url );
+			$quick_links[] = "<a href='" . esc_url( $durl ) . "'>" . esc_html( $text ) . '</a>';
 		}
 
 		if ( ! empty( $quick_links ) ) {
-			echo '<div style="padding: 8px 12px; border-bottom: 1px solid #e5e5e5; margin-bottom: 1em;"><strong>' . esc_html__( 'Quick Jump:', 'mainwp-child' ) . '</strong> ' . esc_html__( implode( ' | ', $quick_links ) ) . '</div>';
+			echo '<div style="padding: 8px 12px; border-bottom: 1px solid #e5e5e5; margin-bottom: 1em;"><strong>' . esc_html__( 'Quick Jump:', 'mainwp-child' ) . '</strong> ' . implode( ' | ', $quick_links ) . '</div>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 
 		self::render_clone_from_server_form( $current_dir, $url );
@@ -527,7 +528,7 @@ class MainWP_Clone_Page {
 			<?php
 			$security_nonces = MainWP_Clone::instance()->get_security_nonces();
 			foreach ( $security_nonces as $k => $v ) {
-				echo 'child_security_nonces[' . "'" . $k . "'" . '] = ' . "'" . $v . "';\n";
+				echo ( 'child_security_nonces[' . "'" . esc_html( $k ) . "'" . '] = ' . "'" . esc_html( $v ) ) . "';\n"; // phpcs:ignore WordPress.Security.EscapeOutput
 			}
 			?>
 
@@ -549,7 +550,7 @@ class MainWP_Clone_Page {
 					alert( 'The selected file is bigger than your maximum allowed filesize. (Maximum: ' + humanSize + ')' );
 				}
 				else {
-					jQuery( '#filesubmit' ).removeAttr( 'disabled' );
+					jQuery( '#filesubmit' ).prop( "disabled", false );
 				}
 			} );
 			jQuery( document ).on( 'click', '#mainwp-child_displayby_sitename', function () {
@@ -1162,7 +1163,7 @@ class MainWP_Clone_Page {
 	 * Method permalink_admin_notice()
 	 */
 	public static function permalink_admin_notice() {
-		if ( isset( $_POST['permalink_structure'] ) || isset( $_POST['category_base'] ) || isset( $_POST['tag_base'] ) ) {
+		if ( isset( $_POST['permalink_structure'] ) || isset( $_POST['category_base'] ) || isset( $_POST['tag_base'] ) ) { // phpcs:ignore WordPress.Security.NonceVerification
 			return;
 		}
 		?>

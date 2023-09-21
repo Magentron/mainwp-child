@@ -59,6 +59,14 @@ class MainWP_Child_Actions {
 	private $current_plugins_info = array();
 
 	/**
+	 * Old themes.
+	 *
+	 * @var array Old themes array.
+	 * */
+	public $current_themes_info = array();
+
+
+	/**
 	 * Method get_class_name()
 	 *
 	 * Get class name.
@@ -100,9 +108,8 @@ class MainWP_Child_Actions {
 	 * Init WP hooks.
 	 */
 	public function init_hooks() {
-
 		// avoid actions.
-		if ( isset( $_POST['mainwpsignature'] ) ) {
+		if ( MainWP_Helper::is_dashboard_request() ) {
 			return;
 		}
 
@@ -353,17 +360,28 @@ class MainWP_Child_Actions {
 				}
 
 				foreach ( $slugs as $slug ) {
-					$theme       = wp_get_theme( $slug );
-					$stylesheet  = $theme['Stylesheet Dir'] . '/style.css';
-					$theme_data  = get_file_data(
+					$theme      = wp_get_theme( $slug );
+					$stylesheet = $theme['Stylesheet Dir'] . '/style.css';
+					$theme_data = get_file_data(
 						$stylesheet,
 						array(
 							'Version' => 'Version',
 						)
 					);
-					$name        = $theme['Name'];
-					$old_version = $upgrader->skin->theme_info->get( 'Version' ); // to fix old version  //$theme['Version'].
-					$version     = $theme_data['Version'];
+					$name       = $theme['Name'];
+
+					$old_version = '';
+
+					if ( isset( $this->current_themes_info[ $slug ] ) ) {
+						$old_theme = $this->current_themes_info[ $slug ];
+
+						if ( isset( $old_theme['version'] ) ) {
+							$old_version = $old_theme['version'];
+						}
+					} elseif ( ! empty( $upgrader->skin->theme_info ) ) {
+						$old_version = $upgrader->skin->theme_info->get( 'Version' ); // to fix old version  //$theme['Version'].
+					}
+					$version = $theme_data['Version'];
 
 					$logs[] = compact( 'slug', 'name', 'old_version', 'version', 'message', 'action' );
 				}
@@ -399,7 +417,7 @@ class MainWP_Child_Actions {
 	 * @param string $slug Plugin slug.
 	 * @param bool   $network_wide Check if network wide.
 	 */
-	public function callback_activate_plugin( $slug, $network_wide ) {
+	public function callback_activate_plugin( $slug, $network_wide = false ) {
 		$_plugins     = $this->get_plugins();
 		$name         = $_plugins[ $slug ]['Name'];
 		$network_wide = $network_wide ? esc_html__( 'network wide', 'mainwp-child' ) : null;
@@ -426,7 +444,7 @@ class MainWP_Child_Actions {
 	 * @param string $slug Plugin slug.
 	 * @param bool   $network_wide Check if network wide.
 	 */
-	public function callback_deactivate_plugin( $slug, $network_wide ) {
+	public function callback_deactivate_plugin( $slug, $network_wide = false ) {
 		$_plugins     = $this->get_plugins();
 		$name         = $_plugins[ $slug ]['Name'];
 		$network_wide = $network_wide ? esc_html__( 'network wide', 'mainwp-child' ) : null;
@@ -494,10 +512,12 @@ class MainWP_Child_Actions {
 	 * Uninstall plugins callback.
 	 */
 	public function callback_pre_option_uninstall_plugins() {
+		// phpcs:disable WordPress.Security.NonceVerification
 		if ( ! isset( $_POST['action'] ) || 'delete-plugin' !== $_POST['action'] ) {
 			return false;
 		}
-		$plugin                       = $_POST['plugin'];
+		$plugin = $_POST['plugin'];
+		// phpcs:enable WordPress.Security.NonceVerification
 		$_plugins                     = $this->get_plugins();
 		$plugins_to_delete            = array();
 		$plugins_to_delete[ $plugin ] = isset( $_plugins[ $plugin ] ) ? $_plugins[ $plugin ] : array();
@@ -514,7 +534,7 @@ class MainWP_Child_Actions {
 	public function callback_deleted_plugin( $plugin_file, $deleted ) {
 		if ( $deleted ) {
 
-			if ( ! isset( $_POST['action'] ) || 'delete-plugin' !== $_POST['action'] ) {
+			if ( ! isset( $_POST['action'] ) || 'delete-plugin' !== $_POST['action'] ) { // phpcs:ignore WordPress.Security.NonceVerification
 				return;
 			}
 			$plugins_to_delete = get_option( 'wp_mainwp_stream_plugins_to_delete' );
@@ -607,7 +627,45 @@ class MainWP_Child_Actions {
 	 * Upgrader pre-instaler callback.
 	 */
 	public function callback_upgrader_pre_install() {
-		$this->current_plugins_info = $this->get_plugins();
+		if ( empty( $this->current_plugins_info ) ) {
+			$this->current_plugins_info = $this->get_plugins();
+		}
+
+		if ( empty( $this->current_themes_info ) ) {
+			$this->current_themes_info = array();
+
+			if ( ! function_exists( '\wp_get_themes' ) ) {
+				require_once ABSPATH . '/wp-admin/includes/theme.php';
+			}
+
+			$themes = wp_get_themes();
+
+			if ( is_array( $themes ) ) {
+				$theme_name  = wp_get_theme()->get( 'Name' );
+				$parent_name = '';
+				$parent      = wp_get_theme()->parent();
+				if ( $parent ) {
+					$parent_name = $parent->get( 'Name' );
+				}
+				foreach ( $themes as $theme ) {
+
+					$_slug = $theme->get_stylesheet();
+					if ( isset( $this->current_themes_info[ $_slug ] ) ) {
+						continue;
+					}
+
+					$out                  = array();
+					$out['name']          = $theme->get( 'Name' );
+					$out['title']         = $theme->display( 'Name', true, false );
+					$out['version']       = $theme->display( 'Version', true, false );
+					$out['active']        = ( $theme->get( 'Name' ) === $theme_name ) ? 1 : 0;
+					$out['slug']          = $_slug;
+					$out['parent_active'] = ( $parent_name == $out['name'] ) ? 1 : 0;
+
+					$this->current_themes_info[ $_slug ] = $out;
+				}
+			}
+		}
 	}
 
 	/**
@@ -659,7 +717,7 @@ class MainWP_Child_Actions {
 
 		$connected_user = get_option( 'mainwp_child_connected_admin', '' );
 
-		if ( ! empty( $user->user_login ) && $connected_user == $user->user_login && MainWP_Helper::is_dashboard_request() ) {
+		if ( ! empty( $user->user_login ) && $connected_user == $user->user_login && MainWP_Helper::is_dashboard_request( true ) ) {
 			return false;  // not save action.
 		}
 
@@ -742,6 +800,16 @@ class MainWP_Child_Actions {
 		if ( 1 === $new_action ) {
 			update_option( 'mainwp_child_send_action_notification_next_time', time() + 5 * MINUTE_IN_SECONDS );
 		}
+	}
+
+
+	/**
+	 * Delete actions logs.
+	 */
+	public function delete_actions() {
+		delete_option( 'mainwp_child_actions_saved_data' );
+		delete_option( 'mainwp_child_send_action_notification_next_time' );
+		MainWP_Helper::write( array( 'success' => 'ok' ) );
 	}
 
 	/**

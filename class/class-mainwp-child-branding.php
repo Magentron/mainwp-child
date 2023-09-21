@@ -34,6 +34,13 @@ class MainWP_Child_Branding {
 	public $child_plugin_dir;
 
 	/**
+	 * Public variable to hold the MainWP Child plugin branding options.
+	 *
+	 * @var string Default null
+	 */
+	public $child_branding_options = null;
+
+	/**
 	 * Method instance()
 	 *
 	 * Create a public static instance.
@@ -58,7 +65,9 @@ class MainWP_Child_Branding {
 		$this->child_plugin_dir = dirname( dirname( __FILE__ ) );
 		add_action( 'mainwp_child_deactivation', array( $this, 'child_deactivation' ) );
 		add_filter( 'mainwp_child_plugin_row_meta', array( $this, 'plugin_row_meta' ), 10, 3 );
-		$this->child_branding_options = $this->init_options();
+		if ( null === $this->child_branding_options ) {
+			$this->child_branding_options = $this->init_options();
+		}
 	}
 
 	/**
@@ -205,7 +214,7 @@ class MainWP_Child_Branding {
 	 */
 	public function action() {
 		$information = array();
-		$mwp_action  = ! empty( $_POST['action'] ) ? sanitize_text_field( wp_unslash( $_POST['action'] ) ) : '';
+		$mwp_action  = MainWP_System::instance()->validate_params( 'action' );
 		switch ( $mwp_action ) {
 			case 'update_branding':
 				$information = $this->update_branding();
@@ -227,7 +236,7 @@ class MainWP_Child_Branding {
 	 */
 	public function update_branding() {
 		$information = array();
-		$settings    = isset( $_POST['settings'] ) ? json_decode( base64_decode( wp_unslash( $_POST['settings'] ) ), true ) : ''; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions -- Required for bacwards compatibility.
+		$settings    = isset( $_POST['settings'] ) ? json_decode( base64_decode( wp_unslash( $_POST['settings'] ) ), true ) : ''; // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions,WordPress.Security.NonceVerification -- Required for bacwards compatibility.
 		if ( ! is_array( $settings ) ) {
 			return $information;
 		}
@@ -467,7 +476,7 @@ class MainWP_Child_Branding {
 
 		add_filter( 'map_meta_cap', array( $this, 'branding_map_meta_cap' ), 10, 5 );
 
-		if ( 'T' === $opts['disable_change'] && ! isset( $_POST['mainwpsignature'] ) ) {
+		if ( 'T' === $opts['disable_change'] && ! MainWP_Helper::is_dashboard_request() ) { // phpcs:ignore WordPress.Security.NonceVerification
 
 			// Disable the WordPress plugin update notifications.
 			remove_action( 'load-update-core.php', 'wp_update_plugins' );
@@ -894,7 +903,7 @@ class MainWP_Child_Branding {
 		}
 
 		if ( ! empty( $header_css ) ) {
-			echo '<style>' . self::parse_css( $header_css ) . '</style>';
+			echo '<style>' . self::parse_css( $header_css ) . '</style>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 	}
 
@@ -906,7 +915,7 @@ class MainWP_Child_Branding {
 	public function custom_login_css() {
 		$extra_setting = $this->get_extra_options();
 		if ( isset( $extra_setting['login_css'] ) && ! empty( $extra_setting['login_css'] ) ) {
-			echo '<style>' . self::parse_css( $extra_setting['login_css'] ) . '</style>';
+			echo '<style>' . self::parse_css( $extra_setting['login_css'] ) . '</style>'; // phpcs:ignore WordPress.Security.EscapeOutput
 		}
 	}
 
@@ -1161,22 +1170,23 @@ class MainWP_Child_Branding {
 		if ( ! $enable_contact && ! current_user_can( 'administrator' ) ) {
 			return false;
 		}
-
+		// phpcs:disable WordPress.Security.NonceVerification
 		if ( isset( $_GET['from_page'] ) ) {
-			$href = admin_url( 'admin.php?page=ContactSupport&from_page=' . ( ! empty( $_GET['from_page'] ) ? rawurlencode( esc_url( wp_unslash( $_GET['from_page'] ) ) ) : '' ) );
+			$href = admin_url( 'admin.php?page=ContactSupport&from_page=' . ( ! empty( $_GET['from_page'] ) ? rawurlencode( wp_unslash( $_GET['from_page'] ) ) : '' ) );
 		} else {
 			$protocol = isset( $_SERVER['HTTPS'] ) && strcasecmp( sanitize_text_field( wp_unslash( $_SERVER['HTTPS'] ) ), 'off' ) ? 'https://' : 'http://';
 			$fullurl  = isset( $_SERVER['HTTP_HOST'] ) && isset( $_SERVER['REQUEST_URI'] ) ? $protocol . sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) . wp_unslash( $_SERVER['REQUEST_URI'] ) : '';
-			$href     = admin_url( 'admin.php?page=ContactSupport&from_page=' . rawurlencode( esc_url( $fullurl ) ) );
+			$href     = admin_url( 'admin.php?page=ContactSupport&from_page=' . rawurlencode( $fullurl ) );
 		}
+		// phpcs:enable WordPress.Security.NonceVerification
 		$args = array(
 			'id'     => 999,
 			'title'  => $this->child_branding_options['contact_label'],
 			'parent' => 'top-secondary',
-			'href'   => $href,
+			'href'   => esc_url( $href ),
 			'meta'   => array(
 				'class' => 'mainwp_branding_support_top_bar_button',
-				'title' => $this->child_branding_options['contact_label'],
+				'title' => esc_html( $this->child_branding_options['contact_label'] ),
 			),
 		);
 
@@ -1344,7 +1354,7 @@ class MainWP_Child_Branding {
 	 * @uses \MainWP\Child\MainWP_Helper::is_updates_screen()
 	 */
 	public function remove_update_nag( $value ) {
-		if ( isset( $_POST['mainwpsignature'] ) ) {
+		if ( MainWP_Helper::is_dashboard_request() ) {
 			return $value;
 		}
 

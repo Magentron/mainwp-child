@@ -93,8 +93,12 @@ class MainWP_Child_Callable {
 		'check_abandoned'       => 'check_abandoned',
 		'wp_seopress'           => 'wp_seopress',
 		'db_updater'            => 'db_updater',
+		'cache_purge_action'    => 'cache_purge_action',
 		'jetpack_protect'       => 'jetpack_protect',
 		'jetpack_scan'          => 'jetpack_scan',
+		'delete_actions'        => 'delete_actions',
+		'verify_action'         => 'verify_action',
+
 	);
 
 	/**
@@ -154,7 +158,7 @@ class MainWP_Child_Callable {
 		$callable         = false;
 		$callable_no_auth = false;
 		$call_func        = false;
-
+		// phpcs:disable WordPress.Security.NonceVerification
 		// check if function is callable.
 		if ( isset( $_POST['function'] ) ) {
 			$call_func        = isset( $_POST['function'] ) ? sanitize_text_field( wp_unslash( $_POST['function'] ) ) : '';
@@ -177,6 +181,7 @@ class MainWP_Child_Callable {
 		} elseif ( isset( $_POST['function'] ) && isset( $_POST['mainwpsignature'] ) && ! $callable && ! $callable_no_auth ) {
 			MainWP_Helper::instance()->error( esc_html__( 'Required version has not been detected. Please, make sure that you are using the latest version of the MainWP Child plugin on your site.', 'mainwp-child' ) );
 		}
+		// phpcs:enable WordPress.Security.NonceVerification
 	}
 
 	/**
@@ -600,7 +605,9 @@ class MainWP_Child_Callable {
 	 * Fire off the check_abandoned() function.
 	 */
 	public function check_abandoned() {
+		 // phpcs:disable WordPress.Security.NonceVerification
 		$which = sanitize_text_field( wp_unslash( $_POST['which'] ) );
+		 // phpcs:enable WordPress.Security.NonceVerification
 		$infor = array();
 		if ( 'plugin' == $which ) {
 			MainWP_Child_Plugins_Check::instance()->run_check();
@@ -731,7 +738,9 @@ class MainWP_Child_Callable {
 	 * @uses \MainWP\Child\MainWP_Helper::write()
 	 */
 	public function extra_execution() {
-		$post        = $_POST;
+		 // phpcs:disable WordPress.Security.NonceVerification
+		$post = $_POST;
+		 // phpcs:enable WordPress.Security.NonceVerification
 		$information = array();
 		/**
 		 * Filter 'mainwp_child_extra_execution'
@@ -933,6 +942,34 @@ class MainWP_Child_Callable {
 		MainWP_Child_Jetpack_Scan::instance()->action();
 	}
 
+	/**
+	 * Method delete_actions()
+	 *
+	 * Delete Non-MainWP actions.
+	 */
+	public function delete_actions() {
+		MainWP_Child_Actions::get_instance()->delete_actions();
+	}
+
+	/**
+	 * Method verify_action()
+	 *
+	 * Handle verify authed action.
+	 */
+	public function verify_action() {
+		// phpcs:disable WordPress.Security.NonceVerification
+		if ( isset( $_REQUEST['actionnonce'] ) && ! empty( $_REQUEST['actionnonce'] ) ) {
+			$valid = MainWP_Utility::instance()->verify_action_nonce( $_REQUEST['actionnonce'] );
+			if ( $valid ) {
+				MainWP_Helper::write( array( 'success' => 1 ) );
+			}
+		}
+		// phpcs:enable WordPress.Security.NonceVerification
+		MainWP_Helper::write( array( 'failed' => 1 ) );
+	}
+
+
+
 
 	/**
 	 * Method delete_backup()
@@ -945,8 +982,9 @@ class MainWP_Child_Callable {
 	public function delete_backup() {
 		$dirs      = MainWP_Helper::get_mainwp_dir( 'backup' );
 		$backupdir = $dirs[0];
-
+		// phpcs:disable WordPress.Security.NonceVerification
 		$file = isset( $_REQUEST['del'] ) ? wp_unslash( $_REQUEST['del'] ) : '';
+		// phpcs:enable WordPress.Security.NonceVerification
 
 		if ( file_exists( $backupdir . $file ) ) {
 			unlink( $backupdir . $file );
@@ -964,7 +1002,9 @@ class MainWP_Child_Callable {
 	 * @uses \MainWP\Child\MainWP_Helper::write()
 	 */
 	public function update_child_values() {
+		 // phpcs:disable WordPress.Security.NonceVerification
 		$unique_id = isset( $_POST['uniqueId'] ) ? sanitize_text_field( wp_unslash( $_POST['uniqueId'] ) ) : '';
+		 // phpcs:enable WordPress.Security.NonceVerification
 		MainWP_Helper::update_option( 'mainwp_child_uniqueId', $unique_id );
 		MainWP_Helper::write( array( 'result' => 'ok' ) );
 	}
@@ -978,6 +1018,18 @@ class MainWP_Child_Callable {
 	 */
 	public function branding_child_plugin() {
 		MainWP_Child_Branding::instance()->action();
+	}
+
+	/**
+	 * Method update_child_plugin()
+	 *
+	 * Fire off the action() function.
+	 *
+	 * @uses MainWP_Child_Cache_Purge::action()
+	 * @used-by \MainWP\Extensions\CacheControl\MainWP_Cache_Control_Purge_View::ajax_cache_control_purge_cache_all()
+	 */
+	public function cache_purge_action() {
+		MainWP_Child_Cache_Purge::instance()->auto_purge_cache( 'true' );
 	}
 
 	/**
@@ -1038,5 +1090,4 @@ class MainWP_Child_Callable {
 		$information['deactivated'] = true;
 		MainWP_Helper::write( $information );
 	}
-
 }
